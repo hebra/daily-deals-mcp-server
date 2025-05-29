@@ -1,0 +1,8 @@
+**/.idea
+**/.envrc
+**/build/
+**/target/
+**/dist/
+
+coverage.out
+**/*.cached.json
