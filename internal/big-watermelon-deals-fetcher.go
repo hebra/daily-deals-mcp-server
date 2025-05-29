@@ -31,6 +31,7 @@ func FetchBigWatermelonDailyDeals() ResponseData {
 	ctx := context.Background()
 
 	localResp := checkLocalFile()
+
 	if localResp.LastUpdated == time.Now().Format(dateFormat) {
 		log.Info("Local file is up to date.")
 		return localResp
@@ -48,6 +49,7 @@ func FetchBigWatermelonDailyDeals() ResponseData {
 
 	// Wait until 7 AM before fetching deals of the day
 	if time.Now().Hour() < 7 {
+		log.Info("Not fetching deals of the day yet.")
 		return ResponseData{
 			LastUpdated: time.Now().Format(dateFormat),
 			Business:    "Big Watermelon Bushy Park",
