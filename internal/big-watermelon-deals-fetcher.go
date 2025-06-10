@@ -47,8 +47,14 @@ func FetchBigWatermelonDailyDeals() ResponseData {
 		Zip:       "3152",
 	}
 
+	localTime, err := time.LoadLocation("Australia/Melbourne")
+	if err != nil {
+		log.Error("Error loading location.", "Error", err)
+		return ResponseData{}
+	}
+
 	// Wait until 7 AM before fetching deals of the day
-	if time.Now().Hour() < 7 {
+	if time.Now().In(localTime).Hour() < 7 {
 		log.Info("Not fetching deals of the day yet.")
 		return ResponseData{
 			LastUpdated: time.Now().Format(dateFormat),
