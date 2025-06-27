@@ -145,7 +145,7 @@ func cleanUpGcpFiles(ctx context.Context, client *genai.Client) {
 func downloadImagesFromBigWatermelon() [][]byte {
 	var imageList [][]byte
 
-	url := "https://www.bigwatermelon.com.au/dailyspecials/"
+	url := "https://www.bigwatermelon.com.au/category/specials/"
 
 	log.Info("Downloading images.", "URL", url)
 	resp, err := http.Get(url)
