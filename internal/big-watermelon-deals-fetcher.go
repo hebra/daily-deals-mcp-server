@@ -306,7 +306,7 @@ func makeRequestToGemini(ctx context.Context, client *genai.Client, files []*gen
 				genai.Text(`
 The image is an advertisement for fruits and vegetables that are on sale.
 Offers are separated by thing vertical and horizontal black lines.
-There are one or two offers per row.
+There are one, two or three offer columns per row.
 The name and price of the fruits are in the right lower corner of each row.
 Please extract the name and price of each offer from the image.
 Split each item into product name, price, currency and optionally the packaging type (e.g. ea, pk, kg etc.).
