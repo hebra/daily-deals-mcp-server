@@ -92,8 +92,8 @@ func TestLoadConfig_WithAPIKey(t *testing.T) {
 	if config.Port != "8080" {
 		t.Errorf("Expected Port to be '8080', got %s", config.Port)
 	}
-	if config.GeminiModel != "gemini-2.0-flash" {
-		t.Errorf("Expected GeminiModel to be 'gemini-2.0-flash', got %s", config.GeminiModel)
+	if config.GeminiModel != "gemini-1.5-flash" {
+		t.Errorf("Expected GeminiModel to be 'gemini-1.5-flash', got %s", config.GeminiModel)
 	}
 	if config.HTTPTimeout != 30*time.Second {
 		t.Errorf("Expected HTTPTimeout to be 30s, got %v", config.HTTPTimeout)
@@ -167,16 +167,17 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "valid config",
 			config: &Config{
-				GeminiAPIKey:      "test-key",
-				FetchHour:         7,
-				CacheFile:         "test.json",
-				SpecialsURL:       "http://example.com",
-				Port:              "8080",
-				Timezone:          "UTC",
-				MaxRetries:        3,
-				RetryBaseDelay:    time.Second,
-				RateLimitRequests: 10,
-				RateLimitWindow:   time.Minute,
+				GeminiAPIKey:            "test-key",
+				FetchHour:               7,
+				CacheFile:               "test.json",
+				SpecialsURL:             "http://example.com",
+				Port:                    "8080",
+				Timezone:                "UTC",
+				MaxRetries:              3,
+				RetryBaseDelay:          time.Second,
+				RateLimitRequests:       10,
+				RateLimitWindow:         time.Minute,
+				MaxConcurrentGoroutines: 5,
 			},
 			shouldErr: false,
 		},
