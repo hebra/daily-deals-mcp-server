@@ -10,24 +10,25 @@ import (
 
 // Config holds all configuration for the application
 type Config struct {
-	GeminiAPIKey      string
-	FetchHour         int
-	CacheFile         string
-	SpecialsURL       string
-	BusinessName      string
-	Port              string
-	GCPFilePrefix     string
-	GeminiModel       string
-	Timezone          string
-	Location          Location
-	HTTPTimeout       time.Duration
-	GeminiTimeout     time.Duration
-	OverallTimeout    time.Duration
-	MaxRetries        int
-	RetryBaseDelay    time.Duration
-	HTTPClient        *http.Client
-	RateLimitRequests int
-	RateLimitWindow   time.Duration
+	GeminiAPIKey            string
+	FetchHour               int
+	CacheFile               string
+	SpecialsURL             string
+	BusinessName            string
+	Port                    string
+	GCPFilePrefix           string
+	GeminiModel             string
+	Timezone                string
+	Location                Location
+	HTTPTimeout             time.Duration
+	GeminiTimeout           time.Duration
+	OverallTimeout          time.Duration
+	MaxRetries              int
+	RetryBaseDelay          time.Duration
+	HTTPClient              *http.Client
+	RateLimitRequests       int
+	RateLimitWindow         time.Duration
+	MaxConcurrentGoroutines int
 }
 
 
@@ -42,15 +43,16 @@ func LoadConfig() *Config {
 		BusinessName:    getEnvWithDefault("BUSINESS_NAME", "Big Watermelon Bushy Park"),
 		Port:            getEnvWithDefault("PORT", "8080"),
 		GCPFilePrefix:   getEnvWithDefault("GCP_FILE_PREFIX", "au-bigwatermelon-image-"),
-		GeminiModel:     getEnvWithDefault("GEMINI_MODEL", "gemini-2.0-flash"),
+		GeminiModel:     getEnvWithDefault("GEMINI_MODEL", "gemini-1.5-flash"),
 		Timezone:        getEnvWithDefault("TIMEZONE", "Australia/Melbourne"),
 		HTTPTimeout:     httpTimeout,
 		GeminiTimeout:   getEnvAsDuration("GEMINI_TIMEOUT", 60*time.Second),
 		OverallTimeout:  getEnvAsDuration("OVERALL_TIMEOUT", 300*time.Second),
 		MaxRetries:        getEnvAsInt("MAX_RETRIES", 3),
 		RetryBaseDelay:    getEnvAsDuration("RETRY_BASE_DELAY", 1*time.Second),
-		RateLimitRequests: getEnvAsInt("RATE_LIMIT_REQUESTS", 10),
-		RateLimitWindow:   getEnvAsDuration("RATE_LIMIT_WINDOW", 1*time.Minute),
+		RateLimitRequests:       getEnvAsInt("RATE_LIMIT_REQUESTS", 10),
+		RateLimitWindow:         getEnvAsDuration("RATE_LIMIT_WINDOW", 1*time.Minute),
+		MaxConcurrentGoroutines: getEnvAsInt("MAX_CONCURRENT_GOROUTINES", 5),
 		HTTPClient: &http.Client{
 			Timeout: httpTimeout,
 			Transport: &http.Transport{
@@ -120,6 +122,10 @@ func (c *Config) Validate() error {
 
 	if c.RateLimitWindow <= 0 {
 		return &ValidationError{Field: "RATE_LIMIT_WINDOW", Message: "must be positive"}
+	}
+
+	if c.MaxConcurrentGoroutines <= 0 {
+		return &ValidationError{Field: "MAX_CONCURRENT_GOROUTINES", Message: "must be positive"}
 	}
 
 	return nil
