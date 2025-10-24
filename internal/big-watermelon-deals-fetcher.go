@@ -25,89 +25,150 @@ const dateFormat = "2006-01-02"
 var log = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 func FetchBigWatermelonDailyDeals(config *Config) ResponseData {
+	logger := log.With("operation", "fetch_deals", "business", config.BusinessName)
+	return fetchBigWatermelonDailyDealsWithLogger(config, logger)
+}
+
+func fetchBigWatermelonDailyDealsWithLogger(config *Config, logger *slog.Logger) ResponseData {
+	logger.Info("Starting deals fetch operation")
+
 	ctx, cancel := context.WithTimeout(context.Background(), config.OverallTimeout)
 	defer cancel()
 
-	localResp := checkLocalFile(config)
+	logger.Debug("Checking local cache file", "cache_file", config.CacheFile)
+	localResp := checkLocalFileWithLogger(config, logger)
 
-	if localResp.LastUpdated == time.Now().Format(dateFormat) {
-		log.Info("Local file is up to date.")
+	currentDate := time.Now().Format(dateFormat)
+	if localResp.LastUpdated == currentDate {
+		logger.Info("Cache is up to date, returning cached data",
+			"cached_date", localResp.LastUpdated,
+			"offers_count", len(localResp.Offers))
 		return localResp
 	}
 
+	logger.Info("Cache is stale or missing, fetching fresh data",
+		"cached_date", localResp.LastUpdated,
+		"current_date", currentDate)
+
 	localTime, err := time.LoadLocation(config.Timezone)
 	if err != nil {
-		log.Error("Error loading location.", "Error", err)
+		logger.Error("Failed to load timezone location", "timezone", config.Timezone, "error", err)
 		return ResponseData{}
 	}
 
-	// Wait until configured hour before fetching deals of the day
-	if time.Now().In(localTime).Hour() < config.FetchHour {
-		log.Info("Not fetching deals of the day yet.", "required_hour", config.FetchHour)
+	currentHour := time.Now().In(localTime).Hour()
+	if currentHour < config.FetchHour {
+		logger.Info("Too early to fetch deals, waiting for configured hour",
+			"current_hour", currentHour,
+			"required_hour", config.FetchHour,
+			"timezone", config.Timezone)
 		return ResponseData{
-			LastUpdated: time.Now().Format(dateFormat),
+			LastUpdated: currentDate,
 			Business:    config.BusinessName,
 			Location:    config.Location,
 		}
 	}
 
-	var client = getClient(ctx)
+	logger.Info("Initializing Gemini client")
+	client := getClientWithLogger(ctx, logger)
+	if client == nil {
+		logger.Error("Failed to initialize Gemini client")
+		return ResponseData{}
+	}
 	defer func(client *genai.Client) {
 		err := client.Close()
 		if err != nil {
-			log.Error("Error closing client", "Error", err)
+			logger.Error("Error closing Gemini client", "error", err)
 		}
 	}(client)
 
-	cleanUpGcpFiles(ctx, client, config)
+	logger.Info("Cleaning up old GCP files")
+	cleanUpGcpFilesWithLogger(ctx, client, config, logger)
 
-	images := downloadImagesFromBigWatermelon(config)
-	gcpFiles := uploadImagesToGoogleCloud(ctx, client, images, config)
+	logger.Info("Downloading images from Big Watermelon")
+	images := downloadImagesFromBigWatermelonWithLogger(config, logger)
+
+	logger.Info("Uploading images to Google Cloud", "image_count", len(images))
+	gcpFiles := uploadImagesToGoogleCloudWithLogger(ctx, client, images, config, logger)
+
+	logger.Info("Processing images with Gemini AI", "file_count", len(gcpFiles))
+	offers := makeRequestToGeminiWithLogger(ctx, client, gcpFiles, config, logger)
 
 	resp := ResponseData{
-		LastUpdated: time.Now().Format(dateFormat),
+		LastUpdated: currentDate,
 		Business:    config.BusinessName,
 		Location:    config.Location,
-		Offers:      makeRequestToGemini(ctx, client, gcpFiles, config),
+		Offers:      offers,
 	}
 
-	writeOffersToFile(resp, config)
+	logger.Info("Writing results to cache file", "offers_count", len(offers))
+	writeOffersToFileWithLogger(resp, config, logger)
+
+	logger.Info("Deals fetch operation completed successfully",
+		"total_offers", len(offers),
+		"processing_time", time.Since(time.Now()))
 
 	return resp
 }
 
 func checkLocalFile(config *Config) ResponseData {
+	logger := log.With("operation", "check_cache", "cache_file", config.CacheFile)
+	return checkLocalFileWithLogger(config, logger)
+}
+
+func checkLocalFileWithLogger(config *Config, logger *slog.Logger) ResponseData {
 	if _, err := os.Stat(config.CacheFile); errors.Is(err, os.ErrNotExist) {
-		log.Info("No local file found.")
+		logger.Debug("Cache file does not exist")
 		return ResponseData{}
 	}
 
+	logger.Debug("Reading cache file")
 	content, err := os.ReadFile(config.CacheFile)
 	if err != nil {
-		log.Error("Error reading local file.", "Error", err)
+		logger.Error("Failed to read cache file", "error", err)
 		return ResponseData{}
 	}
 
+	logger.Debug("Parsing cache file JSON", "content_size", len(content))
 	var resp ResponseData
 	if err := json.Unmarshal(content, &resp); err != nil {
-		log.Error("Error unmarshalling JSON.", "Error", err)
+		logger.Error("Failed to unmarshal cache JSON", "error", err)
 		return ResponseData{}
 	}
+
+	logger.Debug("Cache loaded successfully",
+		"cached_date", resp.LastUpdated,
+		"offers_count", len(resp.Offers))
 
 	return resp
 }
 
 func getClient(ctx context.Context) *genai.Client {
+	logger := log.With("operation", "init_gemini_client")
+	return getClientWithLogger(ctx, logger)
+}
+
+func getClientWithLogger(ctx context.Context, logger *slog.Logger) *genai.Client {
+	logger.Debug("Initializing Gemini client")
 	client, err := genai.NewClient(ctx,
 		option.WithAPIKey(os.Getenv("GEMINI_API_KEY")))
 	if err != nil {
-		log.Error("Error creating Gemini client.", "Error", err)
+		logger.Error("Failed to create Gemini client", "error", err)
+		return nil
 	}
+	logger.Debug("Gemini client initialized successfully")
 	return client
 }
 
 func cleanUpGcpFiles(ctx context.Context, client *genai.Client, config *Config) {
+	logger := log.With("operation", "cleanup_gcp", "prefix", config.GCPFilePrefix)
+	cleanUpGcpFilesWithLogger(ctx, client, config, logger)
+}
+
+func cleanUpGcpFilesWithLogger(ctx context.Context, client *genai.Client, config *Config, logger *slog.Logger) {
+	logger.Debug("Starting GCP file cleanup")
 	files := client.ListFiles(ctx)
+	deletedCount := 0
 
 	for {
 		file, err := files.Next()
@@ -115,143 +176,198 @@ func cleanUpGcpFiles(ctx context.Context, client *genai.Client, config *Config) 
 			if errors.Is(err, iterator.Done) {
 				break
 			}
-			log.Error("Error while listing files:", "Error", err)
+			logger.Error("Error listing GCP files", "error", err)
 			return
 		}
 
 		if strings.Contains(file.Name, config.GCPFilePrefix) {
-			log.Info("Deleting file.", "Name", file.Name)
+			logger.Debug("Deleting old GCP file", "file_name", file.Name)
 			err = client.DeleteFile(ctx, file.Name)
 			if err != nil {
-				log.Error("Error deleting file", "name", file.Name, "Error", err)
+				logger.Warn("Failed to delete GCP file", "file_name", file.Name, "error", err)
+			} else {
+				deletedCount++
 			}
 		}
 	}
+
+	logger.Info("GCP cleanup completed", "files_deleted", deletedCount)
 }
 
 func downloadImagesFromBigWatermelon(config *Config) [][]byte {
+	logger := log.With("operation", "download_images", "url", config.SpecialsURL)
+	return downloadImagesFromBigWatermelonWithLogger(config, logger)
+}
+
+func downloadImagesFromBigWatermelonWithLogger(config *Config, logger *slog.Logger) [][]byte {
 	var imageList [][]byte
 	var mu sync.Mutex
 
-	url := config.SpecialsURL
-
-	log.Info("Downloading images.", "URL", url)
+	logger.Info("Starting image download from Big Watermelon")
 
 	httpClient := &http.Client{
 		Timeout: config.HTTPTimeout,
 	}
 
-	resp, err := httpClient.Get(url)
+	logger.Debug("Fetching specials page HTML")
+	resp, err := httpClient.Get(config.SpecialsURL)
 	if err != nil {
-		log.Error("Error fetching the URL.", "Error", err)
+		logger.Error("Failed to fetch specials page", "error", err)
 		return imageList
 	}
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
 		if err != nil {
-			log.Error("Error closing response body.", "Error", err)
+			logger.Error("Error closing response body", "error", err)
 		}
 	}(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
-		log.Error("Failed to fetch URL", "URL", url, "status code", resp.StatusCode)
+		logger.Error("Specials page returned non-200 status",
+			"status_code", resp.StatusCode,
+			"url", config.SpecialsURL)
 		return imageList
 	}
-	log.Info("Successfully fetched content.")
 
+	logger.Debug("Reading HTML content")
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Error("Error reading the response body.", "Error", err)
+		logger.Error("Failed to read response body", "error", err)
 		return imageList
 	}
 
 	htmlContent := string(body)
-
-	// Example Special URL from BigWatermelon
-	// https://www.bigwatermelon.com.au/wp-content/uploads/2025/04/1-2.FRI-SPECIALS-11-4-25.jpg
-	// https://www.bigwatermelon.com.au/wp-content/uploads/2025/05/1-2.SPECIAL-TUE-27-5-25.jpg
+	logger.Debug("HTML content retrieved", "content_length", len(htmlContent))
 
 	regex := regexp.MustCompile(`(?i)href="([^"]*SPECIALS?[^"]*\.jpg)"`)
-
 	matches := regex.FindAllStringSubmatch(htmlContent, -1)
 
-	log.Info("Extracted SPECIALS image URLs.")
-
-	for _, match := range matches {
-		log.Info("Extracted SPECIALS image URL.", "URL", match[1])
-	}
-
-	if matches != nil {
-		var wg sync.WaitGroup
-		wg.Add(len(matches))
-
-		for _, match := range matches {
-			log.Info("Downloading image.", "URL", match[1])
-
-			go func() {
-				image, err := httpClient.Get(match[1])
-
-				if err != nil {
-					log.Error("Error fetching specials image from URL.", "Error", err)
-					wg.Done()
-					return
-				}
-
-				defer func(Body io.ReadCloser) {
-					err := Body.Close()
-					if err != nil {
-						log.Error("Error closing response body.", "Error", err)
-					}
-				}(image.Body)
-
-				if image.StatusCode != http.StatusOK {
-					log.Error("Failed to fetch specials image.", "URL", match[1], "status code", resp.StatusCode)
-					wg.Done()
-					return
-				}
-
-				imageData, err := io.ReadAll(image.Body)
-				if err != nil {
-					log.Error("Error reading the response body:", "Error", err)
-				}
-
-				mu.Lock()
-				imageList = append(imageList, imageData)
-				mu.Unlock()
-
-				wg.Done()
-			}()
-		}
-		wg.Wait()
-	} else {
-		log.Error("No SPECIAL-OFFERS images found in the HTML content.")
+	if len(matches) == 0 {
+		logger.Warn("No SPECIALS images found in HTML content")
 		return imageList
 	}
+
+	logger.Info("Found SPECIALS image URLs", "count", len(matches))
+	for i, match := range matches {
+		logger.Debug("Found image URL", "index", i, "url", match[1])
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(len(matches))
+	successCount := 0
+	errorCount := 0
+
+	for i, match := range matches {
+		go func(index int, imageURL string) {
+			defer wg.Done()
+
+			logger.Debug("Downloading image", "index", index, "url", imageURL)
+
+			imageResp, err := httpClient.Get(imageURL)
+			if err != nil {
+				logger.Error("Failed to download image",
+					"index", index,
+					"url", imageURL,
+					"error", err)
+				mu.Lock()
+				errorCount++
+				mu.Unlock()
+				return
+			}
+
+			defer func(Body io.ReadCloser) {
+				err := Body.Close()
+				if err != nil {
+					logger.Error("Error closing image response body",
+						"index", index,
+						"error", err)
+				}
+			}(imageResp.Body)
+
+			if imageResp.StatusCode != http.StatusOK {
+				logger.Error("Image download returned non-200 status",
+					"index", index,
+					"url", imageURL,
+					"status_code", imageResp.StatusCode)
+				mu.Lock()
+				errorCount++
+				mu.Unlock()
+				return
+			}
+
+			imageData, err := io.ReadAll(imageResp.Body)
+			if err != nil {
+				logger.Error("Failed to read image data",
+					"index", index,
+					"url", imageURL,
+					"error", err)
+				mu.Lock()
+				errorCount++
+				mu.Unlock()
+				return
+			}
+
+			logger.Debug("Image downloaded successfully",
+				"index", index,
+				"size_bytes", len(imageData))
+
+			mu.Lock()
+			imageList = append(imageList, imageData)
+			successCount++
+			mu.Unlock()
+		}(i, match[1])
+	}
+
+	wg.Wait()
+
+	logger.Info("Image download completed",
+		"total_urls", len(matches),
+		"successful_downloads", successCount,
+		"failed_downloads", errorCount)
 
 	return imageList
 }
 
 func uploadImagesToGoogleCloud(ctx context.Context, client *genai.Client, images [][]byte, config *Config) []*genai.File {
+	logger := log.With("operation", "upload_images", "image_count", len(images))
+	return uploadImagesToGoogleCloudWithLogger(ctx, client, images, config, logger)
+}
 
+func uploadImagesToGoogleCloudWithLogger(ctx context.Context, client *genai.Client, images [][]byte, config *Config, logger *slog.Logger) []*genai.File {
 	var files []*genai.File
 	var mu sync.Mutex
 
+	if len(images) == 0 {
+		logger.Warn("No images to upload")
+		return files
+	}
+
+	logger.Info("Starting image uploads to Google Cloud")
+
 	var wg sync.WaitGroup
 	wg.Add(len(images))
+	successCount := 0
+	errorCount := 0
 
 	for imageIndex, image := range images {
-		go func() {
-			if len(image) == 0 {
-				log.Error("Empty image.", "Index", imageIndex)
-				wg.Done()
+		go func(index int, imageData []byte) {
+			defer wg.Done()
+
+			if len(imageData) == 0 {
+				logger.Error("Empty image data", "index", index)
+				mu.Lock()
+				errorCount++
+				mu.Unlock()
 				return
 			}
-			reader := bytes.NewReader(image)
 
-			imageName := config.GCPFilePrefix + fmt.Sprint(imageIndex) + "-jpg"
+			imageName := config.GCPFilePrefix + fmt.Sprintf("%d-jpg", index)
+			logger.Debug("Uploading image to GCP",
+				"index", index,
+				"name", imageName,
+				"size_bytes", len(imageData))
 
-			log.Info("Uploading image.", "Index", imageIndex, "Name", imageName)
-
+			reader := bytes.NewReader(imageData)
 			options := genai.UploadFileOptions{
 				DisplayName: imageName,
 				MIMEType:    "image/jpeg",
@@ -259,55 +375,83 @@ func uploadImagesToGoogleCloud(ctx context.Context, client *genai.Client, images
 
 			file, err := client.UploadFile(ctx, imageName, reader, &options)
 			if err != nil {
-				log.Error("Failed to upload image to Gemini", "Error", err)
+				logger.Error("Failed to upload image to Gemini",
+					"index", index,
+					"name", imageName,
+					"error", err)
+				mu.Lock()
+				errorCount++
+				mu.Unlock()
+				return
 			}
 
-			log.Info("Uploading image successful.", "Index", imageIndex)
+			logger.Debug("Image uploaded successfully",
+				"index", index,
+				"file_uri", file.URI)
 
 			mu.Lock()
 			files = append(files, file)
+			successCount++
 			mu.Unlock()
-
-			wg.Done()
-		}()
-
+		}(imageIndex, image)
 	}
 
 	wg.Wait()
+
+	logger.Info("Image upload completed",
+		"total_images", len(images),
+		"successful_uploads", successCount,
+		"failed_uploads", errorCount)
+
 	return files
 }
 
 func makeRequestToGemini(ctx context.Context, client *genai.Client, files []*genai.File, config *Config) []Offer {
+	logger := log.With("operation", "gemini_processing", "file_count", len(files))
+	return makeRequestToGeminiWithLogger(ctx, client, files, config, logger)
+}
 
+func makeRequestToGeminiWithLogger(ctx context.Context, client *genai.Client, files []*genai.File, config *Config, logger *slog.Logger) []Offer {
 	var offers []Offer
 	var mu sync.Mutex
 
-	var wg sync.WaitGroup
-	wg.Add(len(files))
+	if len(files) == 0 {
+		logger.Warn("No files to process with Gemini")
+		return offers
+	}
 
-	log.Info("Querying Gemini to extract data from images.")
+	logger.Info("Starting Gemini AI processing for image analysis")
 
 	// Create a timeout context for Gemini operations
 	geminiCtx, geminiCancel := context.WithTimeout(ctx, config.GeminiTimeout)
 	defer geminiCancel()
 
+	var wg sync.WaitGroup
+	wg.Add(len(files))
+	successCount := 0
+	errorCount := 0
+
 	for _, file := range files {
-		go func() {
-			defer func(client *genai.Client, geminiCtx context.Context, name string) {
-				err := client.DeleteFile(geminiCtx, name)
+		go func(gcpFile *genai.File) {
+			defer wg.Done()
+
+			fileLogger := logger.With("file_name", gcpFile.Name, "file_uri", gcpFile.URI)
+			fileLogger.Debug("Processing image with Gemini AI")
+
+			// Ensure file cleanup happens
+			defer func(client *genai.Client, ctx context.Context, name string) {
+				err := client.DeleteFile(ctx, name)
 				if err != nil {
-					log.Error("Error deleting file", "Error", err)
+					fileLogger.Error("Failed to delete GCP file after processing", "error", err)
+				} else {
+					fileLogger.Debug("GCP file deleted successfully")
 				}
-			}(client, geminiCtx, file.Name)
+			}(client, geminiCtx, gcpFile.Name)
 
-			log.Info("Requesting Gemini to extract data from image.", "Name", file.Name)
+			genModel := client.GenerativeModel(config.GeminiModel)
+			genModel.ResponseMIMEType = "application/json"
 
-			genmodels := client.GenerativeModel(config.GeminiModel)
-			genmodels.ResponseMIMEType = "application/json"
-			resp, err := genmodels.GenerateContent(geminiCtx,
-				genai.FileData{URI: file.URI},
-				genai.Text(`
-The image is an advertisement for fruits and vegetables that are on sale.
+			prompt := `The image is an advertisement for fruits and vegetables that are on sale.
 Offers are separated by thing vertical and horizontal black lines.
 There are one, two or three offer columns per row.
 The name and price of the fruits are in the right lower corner of each row.
@@ -316,62 +460,136 @@ Split each item into product name, price, currency and optionally the packaging 
 Normalize the product names to start with upper case letters and the rest lower case letters.
 For the result use this JSON schema:
 Offer = {'productName': string, 'price': number, 'currency': string, 'size': string}
-Return: Array<Offer>
-`))
+Return: Array<Offer>`
+
+			resp, err := genModel.GenerateContent(geminiCtx,
+				genai.FileData{URI: gcpFile.URI},
+				genai.Text(prompt))
+
 			if err != nil {
-				log.Error("Error ", "Error", err)
-				wg.Done()
+				fileLogger.Error("Gemini API call failed", "error", err)
+				mu.Lock()
+				errorCount++
+				mu.Unlock()
 				return
 			}
 
-			log.Info("Data extraction successful for image.", "Name", file.Name)
+			fileLogger.Debug("Gemini API call successful, parsing response")
+			parsedOffers := parseResponseJsonWithLogger(resp, fileLogger)
+
+			if len(parsedOffers) > 0 {
+				fileLogger.Info("Successfully extracted offers from image",
+					"offers_count", len(parsedOffers))
+			} else {
+				fileLogger.Warn("No offers extracted from image")
+			}
+
 			mu.Lock()
-			offers = append(offers, parseResponseJson(resp)...)
+			offers = append(offers, parsedOffers...)
+			successCount++
 			mu.Unlock()
-			wg.Done()
-		}()
+		}(file)
 	}
 
 	wg.Wait()
+
+	logger.Info("Gemini processing completed",
+		"total_files", len(files),
+		"successful_processing", successCount,
+		"failed_processing", errorCount,
+		"total_offers_extracted", len(offers))
 
 	return offers
 }
 
 func parseResponseJson(resp *genai.GenerateContentResponse) []Offer {
+	logger := log.With("operation", "parse_gemini_response")
+	return parseResponseJsonWithLogger(resp, logger)
+}
+
+func parseResponseJsonWithLogger(resp *genai.GenerateContentResponse, logger *slog.Logger) []Offer {
 	if resp == nil {
-		log.Error("Empty response received.")
+		logger.Error("Received nil response from Gemini")
 		return []Offer{}
 	}
 
-	for _, candidate := range resp.Candidates {
-		for _, part := range candidate.Content.Parts {
+	logger.Debug("Parsing Gemini response", "candidates_count", len(resp.Candidates))
 
+	for candidateIndex, candidate := range resp.Candidates {
+		logger.Debug("Processing candidate", "index", candidateIndex, "parts_count", len(candidate.Content.Parts))
+
+		for partIndex, part := range candidate.Content.Parts {
 			var offers []Offer
 
-			if rawJson, ok := part.(genai.Text); ok {
-				if err := json.Unmarshal([]byte(rawJson), &offers); err != nil {
-					log.Error("Error unmarshalling JSON", "Error", err)
-				}
+			rawJson, ok := part.(genai.Text)
+			if !ok {
+				logger.Warn("Unexpected part type in Gemini response",
+					"candidate_index", candidateIndex,
+					"part_index", partIndex,
+					"part_type", fmt.Sprintf("%T", part))
+				continue
 			}
 
-			log.Info("Offers extracted", "Offers", offers)
+			logger.Debug("Attempting to parse JSON response",
+				"candidate_index", candidateIndex,
+				"part_index", partIndex,
+				"json_length", len(rawJson))
+
+			if err := json.Unmarshal([]byte(rawJson), &offers); err != nil {
+				logger.Error("Failed to unmarshal Gemini JSON response",
+					"candidate_index", candidateIndex,
+					"part_index", partIndex,
+					"error", err,
+					"raw_json", string(rawJson))
+				continue
+			}
+
+			if len(offers) > 0 {
+				logger.Info("Successfully parsed offers from Gemini response",
+					"offers_count", len(offers))
+				for i, offer := range offers {
+					logger.Debug("Parsed offer",
+						"index", i,
+						"product", offer.ProductName,
+						"price", offer.Price,
+						"currency", offer.Currency,
+						"size", offer.Size)
+				}
+			} else {
+				logger.Warn("Gemini response contained no offers")
+			}
 
 			return offers
 		}
 	}
+
+	logger.Warn("No valid offers found in Gemini response")
 	return []Offer{}
 }
 
 func writeOffersToFile(resp ResponseData, config *Config) {
+	logger := log.With("operation", "write_cache", "cache_file", config.CacheFile)
+	writeOffersToFileWithLogger(resp, config, logger)
+}
+
+func writeOffersToFileWithLogger(resp ResponseData, config *Config, logger *slog.Logger) {
+	logger.Info("Writing response data to cache file",
+		"offers_count", len(resp.Offers),
+		"last_updated", resp.LastUpdated)
+
 	jsonData, err := json.MarshalIndent(resp, "", "\t")
 	if err != nil {
-		log.Error("Error transforming into JSON.", "Error", err)
+		logger.Error("Failed to marshal response data to JSON", "error", err)
+		return
 	}
 
+	logger.Debug("JSON marshaling successful", "json_size_bytes", len(jsonData))
+
 	err = os.WriteFile(config.CacheFile, jsonData, 0644)
-	if err == nil {
-		log.Info("Wrote file", "File", config.CacheFile)
-	} else {
-		log.Error("Error writing file.", "Error", err)
+	if err != nil {
+		logger.Error("Failed to write cache file", "error", err)
+		return
 	}
+
+	logger.Info("Cache file written successfully", "file_path", config.CacheFile)
 }

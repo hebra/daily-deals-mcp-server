@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"github.com/ThinkInAIXYZ/go-mcp/protocol"
 	"github.com/ThinkInAIXYZ/go-mcp/server"
@@ -18,6 +20,13 @@ import (
 var log = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 type DealsRequest struct {
+}
+
+// generateRequestID creates a unique request ID for tracing
+func generateRequestID() string {
+	bytes := make([]byte, 8)
+	rand.Read(bytes)
+	return hex.EncodeToString(bytes)
 }
 
 func main() {
@@ -90,13 +99,30 @@ func main() {
 }
 
 func getDailyDealsHandler(ctx context.Context, req *protocol.CallToolRequest) (*protocol.CallToolResult, error) {
-	config := internal.LoadConfig()
+	requestID := generateRequestID()
+	logger := log.With("request_id", requestID, "tool", req.Name)
 
-	bytes, err := json.Marshal(internal.FetchBigWatermelonDailyDeals(config))
+	logger.Info("Processing get-big-watermelon-deals request")
+
+	config := internal.LoadConfig()
+	logger.Debug("Configuration loaded", "business", config.BusinessName, "cache_file", config.CacheFile)
+
+	start := time.Now()
+	result := internal.FetchBigWatermelonDailyDeals(config)
+	duration := time.Since(start)
+
+	logger.Info("Deals fetch completed",
+		"duration_ms", duration.Milliseconds(),
+		"offers_count", len(result.Offers),
+		"last_updated", result.LastUpdated)
+
+	bytes, err := json.Marshal(result)
 	if err != nil {
-		log.Error("Error marshalling JSON.", "Error", err)
+		logger.Error("Failed to marshal response JSON", "error", err)
 		return nil, err
 	}
+
+	logger.Debug("Response prepared", "response_size_bytes", len(bytes))
 
 	return &protocol.CallToolResult{
 		Content: []protocol.Content{
@@ -106,5 +132,4 @@ func getDailyDealsHandler(ctx context.Context, req *protocol.CallToolRequest) (*
 			},
 		},
 	}, nil
-
 }
