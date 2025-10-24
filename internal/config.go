@@ -2,6 +2,7 @@ package internal
 
 import (
 	"log/slog"
+	"net/http"
 	"os"
 	"strconv"
 	"time"
@@ -22,11 +23,17 @@ type Config struct {
 	HTTPTimeout       time.Duration
 	GeminiTimeout     time.Duration
 	OverallTimeout    time.Duration
+	MaxRetries        int
+	RetryBaseDelay    time.Duration
+	HTTPClient        *http.Client
+	RateLimitRequests int
+	RateLimitWindow   time.Duration
 }
 
 
 // LoadConfig loads configuration from environment variables with defaults
 func LoadConfig() *Config {
+	httpTimeout := getEnvAsDuration("HTTP_TIMEOUT", 30*time.Second)
 	config := &Config{
 		GeminiAPIKey:    os.Getenv("GEMINI_API_KEY"),
 		FetchHour:       getEnvAsInt("FETCH_HOUR", 7),
@@ -37,9 +44,21 @@ func LoadConfig() *Config {
 		GCPFilePrefix:   getEnvWithDefault("GCP_FILE_PREFIX", "au-bigwatermelon-image-"),
 		GeminiModel:     getEnvWithDefault("GEMINI_MODEL", "gemini-2.0-flash"),
 		Timezone:        getEnvWithDefault("TIMEZONE", "Australia/Melbourne"),
-		HTTPTimeout:     getEnvAsDuration("HTTP_TIMEOUT", 30*time.Second),
+		HTTPTimeout:     httpTimeout,
 		GeminiTimeout:   getEnvAsDuration("GEMINI_TIMEOUT", 60*time.Second),
 		OverallTimeout:  getEnvAsDuration("OVERALL_TIMEOUT", 300*time.Second),
+		MaxRetries:        getEnvAsInt("MAX_RETRIES", 3),
+		RetryBaseDelay:    getEnvAsDuration("RETRY_BASE_DELAY", 1*time.Second),
+		RateLimitRequests: getEnvAsInt("RATE_LIMIT_REQUESTS", 10),
+		RateLimitWindow:   getEnvAsDuration("RATE_LIMIT_WINDOW", 1*time.Minute),
+		HTTPClient: &http.Client{
+			Timeout: httpTimeout,
+			Transport: &http.Transport{
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 10,
+				IdleConnTimeout:     90 * time.Second,
+			},
+		},
 		Location: Location{
 			Latitude:  getEnvAsFloat("LOCATION_LATITUDE", -37.8748714),
 			Longitude: getEnvAsFloat("LOCATION_LONGITUDE", 145.2053244),
@@ -85,6 +104,22 @@ func (c *Config) Validate() error {
 	// Validate timezone
 	if _, err := time.LoadLocation(c.Timezone); err != nil {
 		return &ValidationError{Field: "TIMEZONE", Message: "invalid timezone: " + err.Error()}
+	}
+
+	if c.MaxRetries < 0 {
+		return &ValidationError{Field: "MAX_RETRIES", Message: "must be non-negative"}
+	}
+
+	if c.RetryBaseDelay <= 0 {
+		return &ValidationError{Field: "RETRY_BASE_DELAY", Message: "must be positive"}
+	}
+
+	if c.RateLimitRequests <= 0 {
+		return &ValidationError{Field: "RATE_LIMIT_REQUESTS", Message: "must be positive"}
+	}
+
+	if c.RateLimitWindow <= 0 {
+		return &ValidationError{Field: "RATE_LIMIT_WINDOW", Message: "must be positive"}
 	}
 
 	return nil

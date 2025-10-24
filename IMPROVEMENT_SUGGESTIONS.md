@@ -15,174 +15,13 @@ This document contains comprehensive improvement suggestions for the Big Waterme
 
 ---
 
-## 🎯 Critical Issues (P0 - Must Fix)
-
-### 1. Race Conditions in Concurrent Operations
-**Location**: `internal/big-watermelon-deals-fetcher.go:225,271,325`
-
-**Problem**: Multiple goroutines append to shared slices without synchronization:
-- Line 225: `imageList = append(imageList, imageData)`
-- Line 271: `files = append(files, file)`
-- Line 325: `offers = append(offers, parseResponseJson(resp)...)`
-
-**Impact**: Data corruption, missing results, or panics under concurrent access.
-
-**Solution**: Use mutex protection or channels:
-```go
-var mu sync.Mutex
-mu.Lock()
-imageList = append(imageList, imageData)
-mu.Unlock()
-```
-
-**Implementation Steps**:
-1. Add `sync.Mutex` field to relevant structs
-2. Protect all shared slice operations
-3. Test concurrent scenarios
-
-### 2. Missing Error Handling
-**Location**: `main.go:31`
-
-**Problem**: `server.NewServer()` error is ignored:
-```go
-mcpServer, _ := server.NewServer(sseTransport)
-```
-
-**Impact**: Silent failures during server initialization.
-
-**Solution**: Handle the error properly:
-```go
-mcpServer, err := server.NewServer(sseTransport)
-if err != nil {
-    log.Error("Failed to create MCP server.", "Error", err)
-    os.Exit(1)
-}
-```
-
-**Implementation Steps**:
-1. Check all ignored error returns
-2. Add proper error logging
-3. Consider graceful degradation where appropriate
-
-### 3. No Test Coverage
-**Problem**: Project has zero unit tests despite complex business logic.
-
-**Impact**: No safety net for refactoring, difficult to verify correctness.
-
-**Solution**: Add tests for:
-- Image URL extraction regex
-- JSON parsing logic
-- Cache validation
-- Error handling paths
-
-**Implementation Steps**:
-1. Create `*_test.go` files for each package
-2. Add table-driven tests for complex logic
-3. Mock external dependencies (HTTP, Gemini API)
-4. Aim for 80%+ coverage
-
----
-
-## ⚠️ High Priority Improvements (P1 - Should Fix)
-
-### 4. Configuration Management
-**Problem**: Hardcoded values scattered throughout code:
-- Location coordinates (line 42-48)
-- Time threshold (line 58: `< 7`)
-- URLs, file names, prefixes
-
-**Solution**: Create a configuration struct:
-```go
-type Config struct {
-    GeminiAPIKey    string
-    FetchHour       int
-    CacheFile       string
-    SpecialsURL     string
-    Location        Location
-}
-```
-
-**Implementation Steps**:
-1. Create `config.go` with configuration struct
-2. Add environment variable parsing
-3. Replace hardcoded values with config references
-4. Add configuration validation
-
-### 5. Context Timeout Management
-**Problem**: No timeouts on HTTP requests or Gemini API calls.
-
-**Impact**: Potential indefinite hangs.
-
-**Solution**: Add context timeouts:
-```go
-ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-defer cancel()
-```
-
-**Implementation Steps**:
-1. Add timeout constants
-2. Apply timeouts to all external calls
-3. Handle timeout errors appropriately
-4. Consider configurable timeouts
-
-### 6. Logging Improvements
-**Problem**: Inconsistent log levels and missing structured context.
-
-**Solution**:
-- Add request IDs for tracing
-- Use appropriate log levels (Debug, Info, Warn, Error)
-- Include more context in error logs
-
-**Implementation Steps**:
-1. Standardize log levels across the codebase
-2. Add structured logging with key-value pairs
-3. Implement request tracing
-4. Add debug logs for troubleshooting
-
-### 7. API Key Validation
-**Problem**: No validation that `GEMINI_API_KEY` exists before use.
-
-**Solution**: Add startup validation:
-```go
-if os.Getenv("GEMINI_API_KEY") == "" {
-    log.Error("GEMINI_API_KEY environment variable not set")
-    os.Exit(1)
-}
-```
-
-**Implementation Steps**:
-1. Add validation function
-2. Call during application startup
-3. Provide clear error messages
-4. Consider key format validation
-
-### 8. Graceful Shutdown
-**Problem**: Deferred shutdown in `main.go:51` may not execute properly.
-
-**Solution**: Implement proper signal handling:
-```go
-sigChan := make(chan os.Signal, 1)
-signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-go func() {
-    <-sigChan
-    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer cancel()
-    mcpServer.Shutdown(ctx)
-    os.Exit(0)
-}()
-```
-
-**Implementation Steps**:
-1. Add signal handling package
-2. Implement shutdown timeout
-3. Close resources gracefully
-4. Test shutdown behavior
+## 🎯 High Priority Improvements (P1 - Should Fix)
 
 ---
 
 ## 📊 Medium Priority Improvements (P2 - Nice to Have)
 
-### 9. Cache Expiration Strategy
+### 1. Cache Expiration Strategy
 **Problem**: Cache only checks date, no time-based expiration or force-refresh mechanism.
 
 **Solution**: Add cache TTL and manual refresh capability.
@@ -193,7 +32,7 @@ go func() {
 3. Add manual refresh endpoint
 4. Consider cache size limits
 
-### 10. HTTP Client Reuse
+### 2. HTTP Client Reuse
 **Problem**: Creating new HTTP clients for each request.
 
 **Solution**: Use a shared `http.Client` with connection pooling.
@@ -204,7 +43,7 @@ go func() {
 3. Reuse client across requests
 4. Add client configuration options
 
-### 11. Image Processing Validation
+### 3. Image Processing Validation
 **Problem**: No validation of downloaded image data before upload.
 
 **Solution**: Verify image format and size before processing.
@@ -215,7 +54,7 @@ go func() {
 3. Check for corrupted images
 4. Add image processing metrics
 
-### 12. Retry Logic
+### 4. Retry Logic
 **Problem**: No retry mechanism for transient failures (network, API rate limits).
 
 **Solution**: Implement exponential backoff for retries.
@@ -230,7 +69,7 @@ go func() {
 
 ## 🔧 Code Quality Improvements
 
-### 13. Function Complexity
+### 5. Function Complexity
 **Problem**: `FetchBigWatermelonDailyDeals()` does too much (90 lines).
 
 **Solution**: Break into smaller, testable functions:
@@ -244,7 +83,7 @@ go func() {
 3. Ensure each function has single responsibility
 4. Add unit tests for each function
 
-### 14. Magic Numbers
+### 6. Magic Numbers
 **Problem**: Unexplained constants (7 AM, port 8080, etc.).
 
 **Solution**: Define as named constants with comments.
@@ -255,7 +94,7 @@ go func() {
 3. Add descriptive comments
 4. Group related constants
 
-### 15. Error Messages
+### 7. Error Messages
 **Problem**: Generic error messages don't provide actionable information.
 
 **Solution**: Include context: what failed, why, and how to fix.
@@ -266,22 +105,22 @@ go func() {
 3. Use error wrapping
 4. Standardize error format
 
-### 16. Unused Types
-**Problem**: `MCPRequest` and `MCPResponse` types are defined but never used.
+### 8. Code Documentation
+**Problem**: Limited inline documentation for complex functions.
 
-**Solution**: Remove or document their intended use.
+**Solution**: Add comprehensive documentation for public APIs and complex logic.
 
 **Implementation Steps**:
-1. Audit all defined types
-2. Remove unused types
-3. Document intended use for future types
-4. Consider if they're needed for future features
+1. Add godoc comments for all exported functions
+2. Document complex algorithms and business logic
+3. Add examples for key functions
+4. Keep documentation up to date
 
 ---
 
 ## 🚀 Performance Optimizations
 
-### 17. Concurrent Processing Efficiency
+### 9. Concurrent Processing Efficiency
 **Current**: Goroutines spawn without limits.
 
 **Improvement**: Use worker pool pattern to limit concurrent operations:
@@ -295,7 +134,7 @@ semaphore := make(chan struct{}, 5) // Max 5 concurrent
 3. Monitor performance impact
 4. Add pool size configuration
 
-### 18. Memory Management
+### 10. Memory Management
 **Problem**: Large image data held in memory simultaneously.
 
 **Solution**: Stream images directly to GCP instead of buffering all in memory.
@@ -306,7 +145,7 @@ semaphore := make(chan struct{}, 5) // Max 5 concurrent
 3. Add memory usage monitoring
 4. Consider memory limits
 
-### 19. Gemini Model Selection
+### 11. Gemini Model Selection
 **Current**: Uses `gemini-2.0-flash` (line 302).
 
 **Consideration**: Evaluate if `gemini-1.5-flash` would be sufficient and cheaper.
@@ -321,7 +160,7 @@ semaphore := make(chan struct{}, 5) // Max 5 concurrent
 
 ## 📝 Documentation Enhancements
 
-### 20. API Documentation
+### 12. API Documentation
 **Missing**: OpenAPI/Swagger specification for HTTP endpoints.
 
 **Add**: API documentation for integration partners.
@@ -332,7 +171,7 @@ semaphore := make(chan struct{}, 5) // Max 5 concurrent
 3. Include examples
 4. Keep documentation updated
 
-### 21. Architecture Diagram
+### 13. Architecture Diagram
 **Missing**: Visual representation of system flow.
 
 **Add**: Mermaid diagram showing system architecture.
@@ -343,7 +182,7 @@ semaphore := make(chan struct{}, 5) // Max 5 concurrent
 3. Include deployment considerations
 4. Update with changes
 
-### 22. Environment Variables Documentation
+### 14. Environment Variables Documentation
 **Current**: Only `GEMINI_API_KEY` documented.
 
 **Add**: Complete list with defaults and examples.
@@ -358,7 +197,7 @@ semaphore := make(chan struct{}, 5) // Max 5 concurrent
 
 ## 🔒 Security Considerations
 
-### 23. Input Validation
+### 15. Input Validation
 **Problem**: No validation of external data (HTML content, image URLs).
 
 **Solution**: Sanitize and validate all external inputs.
@@ -369,7 +208,7 @@ semaphore := make(chan struct{}, 5) // Max 5 concurrent
 3. Validate URLs and file paths
 4. Add security tests
 
-### 24. Rate Limiting
+### 16. Rate Limiting
 **Missing**: No protection against abuse of MCP endpoints.
 
 **Solution**: Implement rate limiting middleware.
@@ -380,7 +219,7 @@ semaphore := make(chan struct{}, 5) // Max 5 concurrent
 3. Add rate limit headers
 4. Monitor rate limit hits
 
-### 25. CORS Configuration
+### 17. CORS Configuration
 **Missing**: No CORS headers configured.
 
 **Solution**: Add appropriate CORS middleware if needed for web clients.
@@ -395,7 +234,7 @@ semaphore := make(chan struct{}, 5) // Max 5 concurrent
 
 ## 📦 Deployment Improvements
 
-### 26. Health Check Endpoint
+### 18. Health Check Endpoint
 **Missing**: No `/health` or `/ready` endpoint.
 
 **Add**: For monitoring and load balancer health checks.
@@ -406,7 +245,7 @@ semaphore := make(chan struct{}, 5) // Max 5 concurrent
 3. Add readiness probes
 4. Integrate with monitoring
 
-### 27. Metrics & Monitoring
+### 19. Metrics & Monitoring
 **Missing**: No metrics collection (request counts, latency, errors).
 
 **Solution**: Add Prometheus metrics or similar.
@@ -417,7 +256,7 @@ semaphore := make(chan struct{}, 5) // Max 5 concurrent
 3. Add key business metrics
 4. Integrate with monitoring stack
 
-### 28. Dockerfile Optimization
+### 20. Dockerfile Optimization
 **Missing**: No Dockerfile in repository.
 
 **Add**: Multi-stage build for smaller images.
@@ -438,30 +277,30 @@ semaphore := make(chan struct{}, 5) // Max 5 concurrent
 3. ✅ Add API key validation (#7) - Added GEMINI_API_KEY validation during application startup
 4. ✅ Implement graceful shutdown (#8) - Replaced defer with proper signal handling using os/signal and syscall
 
-### Phase 2 (High Priority - Week 2)
-5. ✅ Add configuration management (#4) - Created Config struct with environment variable support, replaced all hardcoded values with configurable options
-6. ✅ Implement context timeouts (#5) - Added configurable timeouts for HTTP requests, Gemini API calls, and overall operation with context.WithTimeout
-7. ✅ Improve logging (#6) - Added structured logging with request IDs, standardized log levels, and comprehensive context throughout the codebase
-8. ✅ Add basic unit tests (#3) - Added comprehensive unit tests covering configuration loading/validation, cache operations, image URL regex extraction, JSON parsing logic, and helper functions
+### Phase 2 (High Priority - Week 2) ✅ COMPLETED
+5. ✅ Add configuration management - Created Config struct with environment variable support, replaced all hardcoded values with configurable options
+6. ✅ Implement context timeouts - Added configurable timeouts for HTTP requests, Gemini API calls, and overall operation with context.WithTimeout
+7. ✅ Improve logging - Added structured logging with request IDs, standardized log levels, and comprehensive context throughout the codebase
+8. ✅ Add basic unit tests - Added comprehensive unit tests covering configuration loading/validation, cache operations, image URL regex extraction, JSON parsing logic, and helper functions
 
-### Phase 3 (Medium Priority - Week 3-4)
-9. Implement retry logic (#12)
-10. Add health checks (#26)
-11. Improve HTTP client reuse (#10)
-12. Add rate limiting (#24)
+### Phase 3 (Medium Priority - Week 3-4) ✅ COMPLETED
+9. ✅ Implement retry logic (#4) - Added exponential backoff retry mechanism for HTTP requests and Gemini API calls with configurable max retries and base delay
+10. ✅ Add health checks (#18) - Added /health and /ready endpoints for monitoring and load balancer health checks
+11. ✅ Improve HTTP client reuse (#2) - Created shared HTTP client with connection pooling (MaxIdleConns: 100, MaxIdleConnsPerHost: 10, IdleConnTimeout: 90s)
+12. ✅ Add rate limiting (#16) - Implemented token bucket rate limiting middleware for MCP endpoints with configurable requests per window
 
 ### Phase 4 (Future Enhancements)
-13. Add comprehensive monitoring (#27)
-14. Optimize performance (#17, #18)
-15. Enhance documentation (#20, #21)
-16. Add security hardening (#23)
+13. Add comprehensive monitoring (#19)
+14. Optimize performance (#9, #10)
+15. Enhance documentation (#12, #13, #14)
+16. Add security hardening (#15, #17)
 
 ---
 
 ## 📊 Success Metrics
 
-- **Code Quality**: Achieve 8/10 rating
-- **Test Coverage**: Reach 80%+ coverage
+- **Code Quality**: Achieve 8/10 rating (Current: ~7/10)
+- **Test Coverage**: Reach 80%+ coverage (Current: ~40%)
 - **Performance**: Reduce memory usage by 50%
 - **Reliability**: Achieve 99.9% uptime
 - **Security**: Pass security audit

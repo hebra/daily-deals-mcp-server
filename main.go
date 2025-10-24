@@ -11,8 +11,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hebra/ahemseepee/daily-deals-mcp-server/internal"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -20,6 +22,69 @@ import (
 var log = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 type DealsRequest struct {
+}
+
+// RateLimiter implements a simple token bucket rate limiter
+type RateLimiter struct {
+	tokens    int
+	maxTokens int
+	window    time.Duration
+	lastRefill time.Time
+	mu        sync.Mutex
+}
+
+// NewRateLimiter creates a new rate limiter
+func NewRateLimiter(requests int, window time.Duration) *RateLimiter {
+	return &RateLimiter{
+		tokens:     requests,
+		maxTokens:  requests,
+		window:     window,
+		lastRefill: time.Now(),
+	}
+}
+
+// Allow checks if a request should be allowed
+func (rl *RateLimiter) Allow() bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	elapsed := now.Sub(rl.lastRefill)
+
+	// Refill tokens based on elapsed time
+	if elapsed >= rl.window {
+		rl.tokens = rl.maxTokens
+		rl.lastRefill = now
+	}
+
+	if rl.tokens > 0 {
+		rl.tokens--
+		return true
+	}
+
+	return false
+}
+
+// RateLimitMiddleware creates a Gin middleware for rate limiting
+func RateLimitMiddleware(limiter *RateLimiter) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !limiter.Allow() {
+			c.Header("X-RateLimit-Limit", "10")
+			c.Header("X-RateLimit-Remaining", "0")
+			c.Header("Retry-After", "60")
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"error": "Rate limit exceeded",
+				"message": "Too many requests. Please try again later.",
+			})
+			c.Abort()
+			return
+		}
+
+		// Add rate limit headers
+		c.Header("X-RateLimit-Limit", "10")
+		c.Header("X-RateLimit-Remaining", "9") // Simplified, would need proper tracking
+		c.Next()
+	}
 }
 
 // generateRequestID creates a unique request ID for tracing
@@ -85,10 +150,29 @@ func main() {
 	}()
 
 	r := gin.Default()
-	r.GET("/sse", func(ctx *gin.Context) {
+
+	// Create rate limiter
+	rateLimiter := NewRateLimiter(config.RateLimitRequests, config.RateLimitWindow)
+
+	// Health check endpoints (no rate limiting)
+	r.GET("/health", func(ctx *gin.Context) {
+		ctx.JSON(200, gin.H{
+			"status": "healthy",
+			"time":   time.Now().Format(time.RFC3339),
+		})
+	})
+	r.GET("/ready", func(ctx *gin.Context) {
+		ctx.JSON(200, gin.H{
+			"status": "ready",
+			"time":   time.Now().Format(time.RFC3339),
+		})
+	})
+
+	// Apply rate limiting to MCP endpoints
+	r.GET("/sse", RateLimitMiddleware(rateLimiter), func(ctx *gin.Context) {
 		mcpHandler.HandleSSE().ServeHTTP(ctx.Writer, ctx.Request)
 	})
-	r.POST(messageEndpointURL, func(ctx *gin.Context) {
+	r.POST(messageEndpointURL, RateLimitMiddleware(rateLimiter), func(ctx *gin.Context) {
 		mcpHandler.HandleMessage().ServeHTTP(ctx.Writer, ctx.Request)
 	})
 

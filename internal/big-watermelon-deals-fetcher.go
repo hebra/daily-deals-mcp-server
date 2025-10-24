@@ -11,6 +11,7 @@ import (
 	"google.golang.org/api/option"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"regexp"
@@ -23,6 +24,53 @@ import (
 const dateFormat = "2006-01-02"
 
 var log = slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+// retryWithBackoff executes a function with exponential backoff retry logic
+func retryWithBackoff(ctx context.Context, config *Config, operation string, logger *slog.Logger, fn func() error) error {
+	var lastErr error
+	for attempt := 0; attempt <= config.MaxRetries; attempt++ {
+		if attempt > 0 {
+			// Calculate exponential backoff delay
+			delay := time.Duration(float64(config.RetryBaseDelay) * math.Pow(2, float64(attempt-1)))
+			logger.Info("Retrying operation after delay",
+				"operation", operation,
+				"attempt", attempt,
+				"max_retries", config.MaxRetries,
+				"delay", delay,
+				"last_error", lastErr)
+
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(delay):
+				// Continue to next attempt
+			}
+		}
+
+		err := fn()
+		if err == nil {
+			if attempt > 0 {
+				logger.Info("Operation succeeded after retry",
+					"operation", operation,
+					"attempts", attempt+1)
+			}
+			return nil
+		}
+
+		lastErr = err
+		logger.Warn("Operation failed, will retry",
+			"operation", operation,
+			"attempt", attempt,
+			"max_retries", config.MaxRetries,
+			"error", err)
+	}
+
+	logger.Error("Operation failed after all retries",
+		"operation", operation,
+		"attempts", config.MaxRetries+1,
+		"final_error", lastErr)
+	return lastErr
+}
 
 func FetchBigWatermelonDailyDeals(config *Config) ResponseData {
 	logger := log.With("operation", "fetch_deals", "business", config.BusinessName)
@@ -205,12 +253,8 @@ func downloadImagesFromBigWatermelonWithLogger(config *Config, logger *slog.Logg
 
 	logger.Info("Starting image download from Big Watermelon")
 
-	httpClient := &http.Client{
-		Timeout: config.HTTPTimeout,
-	}
-
 	logger.Debug("Fetching specials page HTML")
-	resp, err := httpClient.Get(config.SpecialsURL)
+	resp, err := config.HTTPClient.Get(config.SpecialsURL)
 	if err != nil {
 		logger.Error("Failed to fetch specials page", "error", err)
 		return imageList
@@ -263,7 +307,7 @@ func downloadImagesFromBigWatermelonWithLogger(config *Config, logger *slog.Logg
 
 			logger.Debug("Downloading image", "index", index, "url", imageURL)
 
-			imageResp, err := httpClient.Get(imageURL)
+			imageResp, err := config.HTTPClient.Get(imageURL)
 			if err != nil {
 				logger.Error("Failed to download image",
 					"index", index,
@@ -462,12 +506,18 @@ For the result use this JSON schema:
 Offer = {'productName': string, 'price': number, 'currency': string, 'size': string}
 Return: Array<Offer>`
 
-			resp, err := genModel.GenerateContent(geminiCtx,
-				genai.FileData{URI: gcpFile.URI},
-				genai.Text(prompt))
+			var resp *genai.GenerateContentResponse
+			var err error
+			err = retryWithBackoff(geminiCtx, config, fmt.Sprintf("gemini_api_%s", gcpFile.Name), fileLogger, func() error {
+				var apiErr error
+				resp, apiErr = genModel.GenerateContent(geminiCtx,
+					genai.FileData{URI: gcpFile.URI},
+					genai.Text(prompt))
+				return apiErr
+			})
 
 			if err != nil {
-				fileLogger.Error("Gemini API call failed", "error", err)
+				fileLogger.Error("Gemini API call failed after retries", "error", err)
 				mu.Lock()
 				errorCount++
 				mu.Unlock()
