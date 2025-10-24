@@ -9,31 +9,37 @@ import (
 
 // Config holds all configuration for the application
 type Config struct {
-	GeminiAPIKey    string
-	FetchHour       int
-	CacheFile       string
-	SpecialsURL     string
-	BusinessName    string
-	Port            string
-	GCPFilePrefix   string
-	GeminiModel     string
-	Timezone        string
-	Location        Location
+	GeminiAPIKey      string
+	FetchHour         int
+	CacheFile         string
+	SpecialsURL       string
+	BusinessName      string
+	Port              string
+	GCPFilePrefix     string
+	GeminiModel       string
+	Timezone          string
+	Location          Location
+	HTTPTimeout       time.Duration
+	GeminiTimeout     time.Duration
+	OverallTimeout    time.Duration
 }
 
 
 // LoadConfig loads configuration from environment variables with defaults
 func LoadConfig() *Config {
 	config := &Config{
-		GeminiAPIKey:  os.Getenv("GEMINI_API_KEY"),
-		FetchHour:     getEnvAsInt("FETCH_HOUR", 7),
-		CacheFile:     getEnvWithDefault("CACHE_FILE", "bigwatermelon-dailydeals.cached.json"),
-		SpecialsURL:   getEnvWithDefault("SPECIALS_URL", "https://www.bigwatermelon.com.au/category/specials/"),
-		BusinessName:  getEnvWithDefault("BUSINESS_NAME", "Big Watermelon Bushy Park"),
-		Port:          getEnvWithDefault("PORT", "8080"),
-		GCPFilePrefix: getEnvWithDefault("GCP_FILE_PREFIX", "au-bigwatermelon-image-"),
-		GeminiModel:   getEnvWithDefault("GEMINI_MODEL", "gemini-2.0-flash"),
-		Timezone:      getEnvWithDefault("TIMEZONE", "Australia/Melbourne"),
+		GeminiAPIKey:    os.Getenv("GEMINI_API_KEY"),
+		FetchHour:       getEnvAsInt("FETCH_HOUR", 7),
+		CacheFile:       getEnvWithDefault("CACHE_FILE", "bigwatermelon-dailydeals.cached.json"),
+		SpecialsURL:     getEnvWithDefault("SPECIALS_URL", "https://www.bigwatermelon.com.au/category/specials/"),
+		BusinessName:    getEnvWithDefault("BUSINESS_NAME", "Big Watermelon Bushy Park"),
+		Port:            getEnvWithDefault("PORT", "8080"),
+		GCPFilePrefix:   getEnvWithDefault("GCP_FILE_PREFIX", "au-bigwatermelon-image-"),
+		GeminiModel:     getEnvWithDefault("GEMINI_MODEL", "gemini-2.0-flash"),
+		Timezone:        getEnvWithDefault("TIMEZONE", "Australia/Melbourne"),
+		HTTPTimeout:     getEnvAsDuration("HTTP_TIMEOUT", 30*time.Second),
+		GeminiTimeout:   getEnvAsDuration("GEMINI_TIMEOUT", 60*time.Second),
+		OverallTimeout:  getEnvAsDuration("OVERALL_TIMEOUT", 300*time.Second),
 		Location: Location{
 			Latitude:  getEnvAsFloat("LOCATION_LATITUDE", -37.8748714),
 			Longitude: getEnvAsFloat("LOCATION_LONGITUDE", 145.2053244),
@@ -118,6 +124,16 @@ func getEnvAsFloat(key string, defaultValue float64) float64 {
 			return floatValue
 		}
 		slog.Warn("Invalid float value for environment variable, using default", "key", key, "value", value, "default", defaultValue)
+	}
+	return defaultValue
+}
+
+func getEnvAsDuration(key string, defaultValue time.Duration) time.Duration {
+	if value := os.Getenv(key); value != "" {
+		if duration, err := time.ParseDuration(value); err == nil {
+			return duration
+		}
+		slog.Warn("Invalid duration value for environment variable, using default", "key", key, "value", value, "default", defaultValue)
 	}
 	return defaultValue
 }

@@ -440,7 +440,7 @@ semaphore := make(chan struct{}, 5) // Max 5 concurrent
 
 ### Phase 2 (High Priority - Week 2)
 5. ✅ Add configuration management (#4) - Created Config struct with environment variable support, replaced all hardcoded values with configurable options
-6. Implement context timeouts (#5)
+6. ✅ Implement context timeouts (#5) - Added configurable timeouts for HTTP requests, Gemini API calls, and overall operation with context.WithTimeout
 7. Improve logging (#6)
 8. Add basic unit tests (#3)
 

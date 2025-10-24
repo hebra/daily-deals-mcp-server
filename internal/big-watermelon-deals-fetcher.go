@@ -25,7 +25,8 @@ const dateFormat = "2006-01-02"
 var log = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 func FetchBigWatermelonDailyDeals(config *Config) ResponseData {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), config.OverallTimeout)
+	defer cancel()
 
 	localResp := checkLocalFile(config)
 
@@ -135,7 +136,12 @@ func downloadImagesFromBigWatermelon(config *Config) [][]byte {
 	url := config.SpecialsURL
 
 	log.Info("Downloading images.", "URL", url)
-	resp, err := http.Get(url)
+
+	httpClient := &http.Client{
+		Timeout: config.HTTPTimeout,
+	}
+
+	resp, err := httpClient.Get(url)
 	if err != nil {
 		log.Error("Error fetching the URL.", "Error", err)
 		return imageList
@@ -183,7 +189,7 @@ func downloadImagesFromBigWatermelon(config *Config) [][]byte {
 			log.Info("Downloading image.", "URL", match[1])
 
 			go func() {
-				image, err := http.Get(match[1])
+				image, err := httpClient.Get(match[1])
 
 				if err != nil {
 					log.Error("Error fetching specials image from URL.", "Error", err)
@@ -281,20 +287,24 @@ func makeRequestToGemini(ctx context.Context, client *genai.Client, files []*gen
 
 	log.Info("Querying Gemini to extract data from images.")
 
+	// Create a timeout context for Gemini operations
+	geminiCtx, geminiCancel := context.WithTimeout(ctx, config.GeminiTimeout)
+	defer geminiCancel()
+
 	for _, file := range files {
 		go func() {
-			defer func(client *genai.Client, ctx context.Context, name string) {
-				err := client.DeleteFile(ctx, name)
+			defer func(client *genai.Client, geminiCtx context.Context, name string) {
+				err := client.DeleteFile(geminiCtx, name)
 				if err != nil {
 					log.Error("Error deleting file", "Error", err)
 				}
-			}(client, ctx, file.Name)
+			}(client, geminiCtx, file.Name)
 
 			log.Info("Requesting Gemini to extract data from image.", "Name", file.Name)
 
 			genmodels := client.GenerativeModel(config.GeminiModel)
 			genmodels.ResponseMIMEType = "application/json"
-			resp, err := genmodels.GenerateContent(ctx,
+			resp, err := genmodels.GenerateContent(geminiCtx,
 				genai.FileData{URI: file.URI},
 				genai.Text(`
 The image is an advertisement for fruits and vegetables that are on sale.
