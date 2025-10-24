@@ -23,10 +23,7 @@ type DealsRequest struct {
 func main() {
 	log.Info("Starting offers extractor...")
 
-	if os.Getenv("GEMINI_API_KEY") == "" {
-		log.Error("GEMINI_API_KEY environment variable not set")
-		os.Exit(1)
-	}
+	config := internal.LoadConfig()
 
 	messageEndpointURL := "/message"
 
@@ -86,15 +83,16 @@ func main() {
 		mcpHandler.HandleMessage().ServeHTTP(ctx.Writer, ctx.Request)
 	})
 
-	if err = r.Run(":8080"); err != nil {
+	if err = r.Run(":" + config.Port); err != nil {
 		log.Error("Failed to start HTTP server.", "Error", err)
 		os.Exit(1)
 	}
 }
 
 func getDailyDealsHandler(ctx context.Context, req *protocol.CallToolRequest) (*protocol.CallToolResult, error) {
+	config := internal.LoadConfig()
 
-	bytes, err := json.Marshal(internal.FetchBigWatermelonDailyDeals())
+	bytes, err := json.Marshal(internal.FetchBigWatermelonDailyDeals(config))
 	if err != nil {
 		log.Error("Error marshalling JSON.", "Error", err)
 		return nil, err

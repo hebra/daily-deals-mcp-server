@@ -6,3 +6,5 @@
 
 coverage.out
 **/*.cached.json
+/daily-deals-mcp-server
+/IMPROVEMENT_SUGGESTIONS.md

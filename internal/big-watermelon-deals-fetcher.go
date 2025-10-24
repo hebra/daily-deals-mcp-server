@@ -20,47 +20,33 @@ import (
 	_ "time/tzdata"
 )
 
-const gcpFilePrefix = "au-bigwatermelon-image-"
-
-const offersJsonfilename = "bigwatermelon-dailydeals.cached.json"
-
 const dateFormat = "2006-01-02"
 
 var log = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
-func FetchBigWatermelonDailyDeals() ResponseData {
+func FetchBigWatermelonDailyDeals(config *Config) ResponseData {
 	ctx := context.Background()
 
-	localResp := checkLocalFile()
+	localResp := checkLocalFile(config)
 
 	if localResp.LastUpdated == time.Now().Format(dateFormat) {
 		log.Info("Local file is up to date.")
 		return localResp
 	}
 
-	location := Location{
-		Latitude:  -37.8748714,
-		Longitude: 145.2053244,
-		Address:   "1161 High St Rd",
-		City:      "Wantirna South",
-		State:     "VIC",
-		Country:   "Australia",
-		Zip:       "3152",
-	}
-
-	localTime, err := time.LoadLocation("Australia/Melbourne")
+	localTime, err := time.LoadLocation(config.Timezone)
 	if err != nil {
 		log.Error("Error loading location.", "Error", err)
 		return ResponseData{}
 	}
 
-	// Wait until 7 AM before fetching deals of the day
-	if time.Now().In(localTime).Hour() < 7 {
-		log.Info("Not fetching deals of the day yet.")
+	// Wait until configured hour before fetching deals of the day
+	if time.Now().In(localTime).Hour() < config.FetchHour {
+		log.Info("Not fetching deals of the day yet.", "required_hour", config.FetchHour)
 		return ResponseData{
 			LastUpdated: time.Now().Format(dateFormat),
-			Business:    "Big Watermelon Bushy Park",
-			Location:    location,
+			Business:    config.BusinessName,
+			Location:    config.Location,
 		}
 	}
 
@@ -72,30 +58,30 @@ func FetchBigWatermelonDailyDeals() ResponseData {
 		}
 	}(client)
 
-	cleanUpGcpFiles(ctx, client)
+	cleanUpGcpFiles(ctx, client, config)
 
-	images := downloadImagesFromBigWatermelon()
-	gcpFiles := uploadImagesToGoogleCloud(ctx, client, images)
+	images := downloadImagesFromBigWatermelon(config)
+	gcpFiles := uploadImagesToGoogleCloud(ctx, client, images, config)
 
 	resp := ResponseData{
 		LastUpdated: time.Now().Format(dateFormat),
-		Business:    "Big Watermelon Bushy Park",
-		Location:    location,
-		Offers:      makeRequestToGemini(ctx, client, gcpFiles),
+		Business:    config.BusinessName,
+		Location:    config.Location,
+		Offers:      makeRequestToGemini(ctx, client, gcpFiles, config),
 	}
 
-	writeOffersToFile(resp)
+	writeOffersToFile(resp, config)
 
 	return resp
 }
 
-func checkLocalFile() ResponseData {
-	if _, err := os.Stat(offersJsonfilename); errors.Is(err, os.ErrNotExist) {
+func checkLocalFile(config *Config) ResponseData {
+	if _, err := os.Stat(config.CacheFile); errors.Is(err, os.ErrNotExist) {
 		log.Info("No local file found.")
 		return ResponseData{}
 	}
 
-	content, err := os.ReadFile(offersJsonfilename)
+	content, err := os.ReadFile(config.CacheFile)
 	if err != nil {
 		log.Error("Error reading local file.", "Error", err)
 		return ResponseData{}
@@ -119,7 +105,7 @@ func getClient(ctx context.Context) *genai.Client {
 	return client
 }
 
-func cleanUpGcpFiles(ctx context.Context, client *genai.Client) {
+func cleanUpGcpFiles(ctx context.Context, client *genai.Client, config *Config) {
 	files := client.ListFiles(ctx)
 
 	for {
@@ -132,7 +118,7 @@ func cleanUpGcpFiles(ctx context.Context, client *genai.Client) {
 			return
 		}
 
-		if strings.Contains(file.Name, gcpFilePrefix) {
+		if strings.Contains(file.Name, config.GCPFilePrefix) {
 			log.Info("Deleting file.", "Name", file.Name)
 			err = client.DeleteFile(ctx, file.Name)
 			if err != nil {
@@ -142,11 +128,11 @@ func cleanUpGcpFiles(ctx context.Context, client *genai.Client) {
 	}
 }
 
-func downloadImagesFromBigWatermelon() [][]byte {
+func downloadImagesFromBigWatermelon(config *Config) [][]byte {
 	var imageList [][]byte
 	var mu sync.Mutex
 
-	url := "https://www.bigwatermelon.com.au/category/specials/"
+	url := config.SpecialsURL
 
 	log.Info("Downloading images.", "URL", url)
 	resp, err := http.Get(url)
@@ -239,7 +225,7 @@ func downloadImagesFromBigWatermelon() [][]byte {
 	return imageList
 }
 
-func uploadImagesToGoogleCloud(ctx context.Context, client *genai.Client, images [][]byte) []*genai.File {
+func uploadImagesToGoogleCloud(ctx context.Context, client *genai.Client, images [][]byte, config *Config) []*genai.File {
 
 	var files []*genai.File
 	var mu sync.Mutex
@@ -256,7 +242,7 @@ func uploadImagesToGoogleCloud(ctx context.Context, client *genai.Client, images
 			}
 			reader := bytes.NewReader(image)
 
-			imageName := gcpFilePrefix + fmt.Sprint(imageIndex) + "-jpg"
+			imageName := config.GCPFilePrefix + fmt.Sprint(imageIndex) + "-jpg"
 
 			log.Info("Uploading image.", "Index", imageIndex, "Name", imageName)
 
@@ -285,7 +271,7 @@ func uploadImagesToGoogleCloud(ctx context.Context, client *genai.Client, images
 	return files
 }
 
-func makeRequestToGemini(ctx context.Context, client *genai.Client, files []*genai.File) []Offer {
+func makeRequestToGemini(ctx context.Context, client *genai.Client, files []*genai.File, config *Config) []Offer {
 
 	var offers []Offer
 	var mu sync.Mutex
@@ -306,7 +292,7 @@ func makeRequestToGemini(ctx context.Context, client *genai.Client, files []*gen
 
 			log.Info("Requesting Gemini to extract data from image.", "Name", file.Name)
 
-			genmodels := client.GenerativeModel("gemini-2.0-flash")
+			genmodels := client.GenerativeModel(config.GeminiModel)
 			genmodels.ResponseMIMEType = "application/json"
 			resp, err := genmodels.GenerateContent(ctx,
 				genai.FileData{URI: file.URI},
@@ -366,15 +352,15 @@ func parseResponseJson(resp *genai.GenerateContentResponse) []Offer {
 	return []Offer{}
 }
 
-func writeOffersToFile(resp ResponseData) {
+func writeOffersToFile(resp ResponseData, config *Config) {
 	jsonData, err := json.MarshalIndent(resp, "", "\t")
 	if err != nil {
 		log.Error("Error transforming into JSON.", "Error", err)
 	}
 
-	err = os.WriteFile(offersJsonfilename, jsonData, 0644)
+	err = os.WriteFile(config.CacheFile, jsonData, 0644)
 	if err == nil {
-		log.Info("Wrote file", "File", offersJsonfilename)
+		log.Info("Wrote file", "File", config.CacheFile)
 	} else {
 		log.Error("Error writing file.", "Error", err)
 	}
