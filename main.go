@@ -10,6 +10,9 @@ import (
 	"github.com/hebra/ahemseepee/daily-deals-mcp-server/internal"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 )
 
 var log = slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -20,6 +23,11 @@ type DealsRequest struct {
 func main() {
 	log.Info("Starting offers extractor...")
 
+	if os.Getenv("GEMINI_API_KEY") == "" {
+		log.Error("GEMINI_API_KEY environment variable not set")
+		os.Exit(1)
+	}
+
 	messageEndpointURL := "/message"
 
 	sseTransport, mcpHandler, err := transport.NewSSEServerTransportAndHandler(messageEndpointURL)
@@ -28,7 +36,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	mcpServer, _ := server.NewServer(sseTransport)
+	mcpServer, err := server.NewServer(sseTransport)
+	if err != nil {
+		log.Error("Failed to create MCP server.", "Error", err)
+		os.Exit(1)
+	}
 
 	tool, err := protocol.NewTool("get-big-watermelon-deals",
 		"Get today's deals from Big Watermelon",
@@ -48,13 +60,23 @@ func main() {
 		}
 	}()
 
-	defer func(mcpServer *server.Server, userCtx context.Context) {
-		err := mcpServer.Shutdown(userCtx)
+	// Setup graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		<-sigChan
+		log.Info("Received shutdown signal, shutting down gracefully...")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		err := mcpServer.Shutdown(ctx)
 		if err != nil {
 			log.Error("Failed to shutdown MCP server.", "Error", err)
 			os.Exit(1)
 		}
-	}(mcpServer, context.Background())
+		log.Info("Server shutdown complete")
+		os.Exit(0)
+	}()
 
 	r := gin.Default()
 	r.GET("/sse", func(ctx *gin.Context) {

@@ -144,6 +144,7 @@ func cleanUpGcpFiles(ctx context.Context, client *genai.Client) {
 
 func downloadImagesFromBigWatermelon() [][]byte {
 	var imageList [][]byte
+	var mu sync.Mutex
 
 	url := "https://www.bigwatermelon.com.au/category/specials/"
 
@@ -222,7 +223,9 @@ func downloadImagesFromBigWatermelon() [][]byte {
 					log.Error("Error reading the response body:", "Error", err)
 				}
 
+				mu.Lock()
 				imageList = append(imageList, imageData)
+				mu.Unlock()
 
 				wg.Done()
 			}()
@@ -239,6 +242,7 @@ func downloadImagesFromBigWatermelon() [][]byte {
 func uploadImagesToGoogleCloud(ctx context.Context, client *genai.Client, images [][]byte) []*genai.File {
 
 	var files []*genai.File
+	var mu sync.Mutex
 
 	var wg sync.WaitGroup
 	wg.Add(len(images))
@@ -268,7 +272,9 @@ func uploadImagesToGoogleCloud(ctx context.Context, client *genai.Client, images
 
 			log.Info("Uploading image successful.", "Index", imageIndex)
 
+			mu.Lock()
 			files = append(files, file)
+			mu.Unlock()
 
 			wg.Done()
 		}()
@@ -282,6 +288,7 @@ func uploadImagesToGoogleCloud(ctx context.Context, client *genai.Client, images
 func makeRequestToGemini(ctx context.Context, client *genai.Client, files []*genai.File) []Offer {
 
 	var offers []Offer
+	var mu sync.Mutex
 
 	var wg sync.WaitGroup
 	wg.Add(len(files))
@@ -322,7 +329,9 @@ Return: Array<Offer>
 			}
 
 			log.Info("Data extraction successful for image.", "Name", file.Name)
+			mu.Lock()
 			offers = append(offers, parseResponseJson(resp)...)
+			mu.Unlock()
 			wg.Done()
 		}()
 	}
