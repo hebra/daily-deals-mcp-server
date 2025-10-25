@@ -4,23 +4,22 @@ This file provides guidance to agents when working with code in this repository.
 
 ## Non-Obvious Project Details
 
-### Environment Requirements
-- `GEMINI_API_KEY` environment variable is REQUIRED (Google Gemini API for image analysis)
-- Server waits until 7 AM Australia/Melbourne time before fetching deals (line 58 in [`internal/big-watermelon-deals-fetcher.go`](internal/big-watermelon-deals-fetcher.go:58))
+### Image Processing Regex
+- Images scraped using case-insensitive pattern `(?i)href="([^"]*SPECIALS?[^"]*\.jpg)"` - matches both "SPECIAL" and "SPECIALS" in URLs
 
-### Caching Behavior
-- Deals cached in `bigwatermelon-dailydeals.cached.json` with date-based validation
-- Cache checked BEFORE fetching new data (line 34-39 in [`internal/big-watermelon-deals-fetcher.go`](internal/big-watermelon-deals-fetcher.go:34))
-- Only fetches once per day based on `LastUpdated` field matching current date
+### Time Handling
+- Uses `time/tzdata` import for embedded timezone data (required for deployment environments without system timezone files)
+- Server waits until configured hour (default 7 AM) in Australia/Melbourne timezone before fetching deals
 
-### Image Processing
-- Images scraped from HTML using regex pattern `(?i)href="([^"]*SPECIALS?[^"]*\.jpg)"` (line 181)
+### GCP File Management
 - GCP files prefixed with `au-bigwatermelon-image-` for cleanup tracking
-- All uploaded images automatically deleted after Gemini processing (line 293-297)
+- Cleanup happens BEFORE new uploads to avoid quota issues
+- Files automatically deleted after Gemini processing via deferred cleanup in goroutines
 
-### Concurrency
-- Image downloads, uploads, and Gemini requests use goroutines with `sync.WaitGroup`
-- No mutex protection on slice appends (lines 225, 271, 325) - potential race condition
+### Gemini Prompt Structure
+- Prompt explicitly mentions "one, two or three offer columns per row" - critical for correct parsing
+- Response format must be `application/json` MIME type
+- Product names normalized to title case in prompt
 
 ### Testing
 - Run single test: `go test -v ./internal -run TestFunctionName`

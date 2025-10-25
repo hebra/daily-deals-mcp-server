@@ -1,14 +1,20 @@
 # Code Mode Rules (Non-Obvious Only)
 
-## Concurrency Gotchas
-- Slice appends in goroutines lack mutex protection (lines 225, 271, 325 in [`internal/big-watermelon-deals-fetcher.go`](../../internal/big-watermelon-deals-fetcher.go:225)) - potential race condition
-- All concurrent operations use `sync.WaitGroup` but no synchronization on shared data structures
-
 ## API Integration
-- Gemini client MUST be closed with defer (line 68-73)
+- Gemini client MUST be closed with defer after creation
 - GCP file cleanup happens BEFORE new uploads to avoid quota issues
-- File deletion is deferred within goroutines (line 293-297) - happens after processing
+- File deletion is deferred within goroutines - happens after Gemini processing completes
 
 ## Time Handling
-- Uses `time/tzdata` import for embedded timezone data (line 20)
-- Australia/Melbourne timezone loaded explicitly for 7 AM check (line 51-55)
+- Uses `time/tzdata` import for embedded timezone data (line 21) - required for environments without system timezone files
+- Australia/Melbourne timezone loaded explicitly for fetch hour check
+
+## Concurrency Patterns
+- All concurrent operations use mutex-protected slice appends (lines 252, 382, 460)
+- Worker pool pattern NOT implemented - uses unbounded goroutines with WaitGroup
+- Each goroutine handles its own error counting with mutex protection
+
+## Configuration
+- All functions accept `*Config` parameter - no global config state
+- Logger instances created with context using `log.With()` for structured logging
+- HTTP client with timeout is part of Config struct, not created per-request
