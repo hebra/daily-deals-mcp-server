@@ -31,26 +31,25 @@ type Config struct {
 	MaxConcurrentGoroutines int
 }
 
-
 // LoadConfig loads configuration from environment variables with defaults
 func LoadConfig() *Config {
 	httpTimeout := getEnvAsDuration("HTTP_TIMEOUT", 30*time.Second)
 	config := &Config{
-		GeminiAPIKey:    os.Getenv("GEMINI_API_KEY"),
-		FetchHour:       getEnvAsInt("FETCH_HOUR", 7),
-		CacheFile:       getEnvWithDefault("CACHE_FILE", "bigwatermelon-dailydeals.cached.json"),
-		SpecialsURL:     getEnvWithDefault("SPECIALS_URL", "https://www.bigwatermelon.com.au/category/specials/"),
-		BusinessName:    getEnvWithDefault("BUSINESS_NAME", "Big Watermelon Bushy Park"),
-		Port:            getEnvWithDefault("PORT", "8080"),
-		GCPFilePrefix:   getEnvWithDefault("GCP_FILE_PREFIX", "au-bigwatermelon-image-"),
-		GeminiModel:     getEnvWithDefault("GEMINI_MODEL", "gemini-1.5-flash"),
-		Timezone:        getEnvWithDefault("TIMEZONE", "Australia/Melbourne"),
-		HTTPTimeout:     httpTimeout,
-		GeminiTimeout:   getEnvAsDuration("GEMINI_TIMEOUT", 60*time.Second),
-		OverallTimeout:  getEnvAsDuration("OVERALL_TIMEOUT", 300*time.Second),
-		MaxRetries:        getEnvAsInt("MAX_RETRIES", 3),
-		RetryBaseDelay:    getEnvAsDuration("RETRY_BASE_DELAY", 1*time.Second),
-		RateLimitRequests:       getEnvAsInt("RATE_LIMIT_REQUESTS", 10),
+		GeminiAPIKey:            os.Getenv("GEMINI_API_KEY"),
+		FetchHour:               getEnvAsInt("FETCH_HOUR", 7),
+		CacheFile:               getEnvWithDefault("CACHE_FILE", "bigwatermelon-dailydeals.cached.json"),
+		SpecialsURL:             getEnvWithDefault("SPECIALS_URL", "https://www.bigwatermelon.com.au/category/specials/"),
+		BusinessName:            getEnvWithDefault("BUSINESS_NAME", "Big Watermelon Bushy Park"),
+		Port:                    getEnvWithDefault("PORT", "8080"),
+		GCPFilePrefix:           getEnvWithDefault("GCP_FILE_PREFIX", "au-bigwatermelon-image-"),
+		GeminiModel:             getEnvWithDefault("GEMINI_MODEL", "gemini-1.5-flash"),
+		Timezone:                getEnvWithDefault("TIMEZONE", "Australia/Melbourne"),
+		HTTPTimeout:             httpTimeout,
+		GeminiTimeout:           getEnvAsDuration("GEMINI_TIMEOUT", 60*time.Second),
+		OverallTimeout:          getEnvAsDuration("OVERALL_TIMEOUT", 300*time.Second),
+		MaxRetries:              getEnvAsInt("MAX_RETRIES", 3),
+		RetryBaseDelay:          getEnvAsDuration("RETRY_BASE_DELAY", 1*time.Second),
+		RateLimitRequests:       getEnvAsInt("RATE_LIMIT_REQUESTS", 100),
 		RateLimitWindow:         getEnvAsDuration("RATE_LIMIT_WINDOW", 1*time.Minute),
 		MaxConcurrentGoroutines: getEnvAsInt("MAX_CONCURRENT_GOROUTINES", 5),
 		HTTPClient: &http.Client{
