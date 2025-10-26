@@ -10,14 +10,19 @@ import (
 
 // Config holds all configuration for the application
 type Config struct {
-	GeminiAPIKey            string
+	GeminiAPIKey            string // Deprecated: Use RequestyAPIKey instead
+	RequestyAPIKey          string
+	RequestyBaseURL         string
+	RequestyModel           string
+	RequestyMaxTokens       int
+	RequestyTemperature     float64
 	FetchHour               int
 	CacheFile               string
 	SpecialsURL             string
 	BusinessName            string
 	Port                    string
-	GCPFilePrefix           string
-	GeminiModel             string
+	GCPFilePrefix           string // Deprecated: No longer used with requesty.ai
+	GeminiModel             string // Deprecated: Use RequestyModel instead
 	Timezone                string
 	Location                Location
 	HTTPTimeout             time.Duration
@@ -34,8 +39,20 @@ type Config struct {
 // LoadConfig loads configuration from environment variables with defaults
 func LoadConfig() *Config {
 	httpTimeout := getEnvAsDuration("HTTP_TIMEOUT", 30*time.Second)
+
+	// Support both old GEMINI_API_KEY and new REQUESTY_API_KEY
+	requestyAPIKey := os.Getenv("REQUESTY_API_KEY")
+	if requestyAPIKey == "" {
+		requestyAPIKey = os.Getenv("GEMINI_API_KEY")
+	}
+
 	config := &Config{
-		GeminiAPIKey:            os.Getenv("GEMINI_API_KEY"),
+		GeminiAPIKey:            os.Getenv("GEMINI_API_KEY"), // Deprecated but kept for backward compatibility
+		RequestyAPIKey:          requestyAPIKey,
+		RequestyBaseURL:         getEnvWithDefault("REQUESTY_BASE_URL", "https://router.requesty.ai/v1"),
+		RequestyModel:           getEnvWithDefault("REQUESTY_MODEL", "gemini-1.5-flash"),
+		RequestyMaxTokens:       getEnvAsInt("REQUESTY_MAX_TOKENS", 4096),
+		RequestyTemperature:     getEnvAsFloat("REQUESTY_TEMPERATURE", 0.0),
 		FetchHour:               getEnvAsInt("FETCH_HOUR", 7),
 		CacheFile:               getEnvWithDefault("CACHE_FILE", "bigwatermelon-dailydeals.cached.json"),
 		SpecialsURL:             getEnvWithDefault("SPECIALS_URL", "https://www.bigwatermelon.com.au/category/specials/"),
@@ -82,8 +99,16 @@ func LoadConfig() *Config {
 
 // Validate checks that required configuration values are present
 func (c *Config) Validate() error {
-	if c.GeminiAPIKey == "" {
-		return &ValidationError{Field: "GEMINI_API_KEY", Message: "API key is required"}
+	if c.RequestyAPIKey == "" {
+		return &ValidationError{Field: "REQUESTY_API_KEY or GEMINI_API_KEY", Message: "API key is required"}
+	}
+
+	if c.RequestyBaseURL == "" {
+		return &ValidationError{Field: "REQUESTY_BASE_URL", Message: "Requesty base URL is required"}
+	}
+
+	if c.RequestyModel == "" {
+		return &ValidationError{Field: "REQUESTY_MODEL", Message: "Requesty model is required"}
 	}
 
 	if c.FetchHour < 0 || c.FetchHour > 23 {

@@ -42,8 +42,8 @@ func TestLoadConfig_Defaults(t *testing.T) {
 		t.Error("Expected validation to fail with missing GEMINI_API_KEY")
 	}
 	if validationErr, ok := err.(*ValidationError); ok {
-		if validationErr.Field != "GEMINI_API_KEY" {
-			t.Errorf("Expected error field to be GEMINI_API_KEY, got %s", validationErr.Field)
+		if validationErr.Field != "REQUESTY_API_KEY or GEMINI_API_KEY" {
+			t.Errorf("Expected error field to be 'REQUESTY_API_KEY or GEMINI_API_KEY', got %s", validationErr.Field)
 		}
 	} else {
 		t.Errorf("Expected ValidationError, got %T", err)
@@ -167,7 +167,9 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "valid config",
 			config: &Config{
-				GeminiAPIKey:            "test-key",
+				RequestyAPIKey:          "test-key",
+				RequestyBaseURL:         "https://router.requesty.ai/v1",
+				RequestyModel:           "gemini-1.5-flash",
 				FetchHour:               7,
 				CacheFile:               "test.json",
 				SpecialsURL:             "http://example.com",
@@ -191,17 +193,19 @@ func TestConfig_Validate(t *testing.T) {
 				Timezone:    "UTC",
 			},
 			shouldErr: true,
-			errField:   "GEMINI_API_KEY",
+			errField:   "REQUESTY_API_KEY or GEMINI_API_KEY",
 		},
 		{
 			name: "invalid fetch hour - negative",
 			config: &Config{
-				GeminiAPIKey: "test-key",
-				FetchHour:    -1,
-				CacheFile:    "test.json",
-				SpecialsURL:  "http://example.com",
-				Port:         "8080",
-				Timezone:     "UTC",
+				RequestyAPIKey:  "test-key",
+				RequestyBaseURL: "https://router.requesty.ai/v1",
+				RequestyModel:   "gemini-1.5-flash",
+				FetchHour:       -1,
+				CacheFile:       "test.json",
+				SpecialsURL:     "http://example.com",
+				Port:            "8080",
+				Timezone:        "UTC",
 			},
 			shouldErr: true,
 			errField:   "FETCH_HOUR",
@@ -209,12 +213,14 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "invalid fetch hour - too high",
 			config: &Config{
-				GeminiAPIKey: "test-key",
-				FetchHour:    25,
-				CacheFile:    "test.json",
-				SpecialsURL:  "http://example.com",
-				Port:         "8080",
-				Timezone:     "UTC",
+				RequestyAPIKey:  "test-key",
+				RequestyBaseURL: "https://router.requesty.ai/v1",
+				RequestyModel:   "gemini-1.5-flash",
+				FetchHour:       25,
+				CacheFile:       "test.json",
+				SpecialsURL:     "http://example.com",
+				Port:            "8080",
+				Timezone:        "UTC",
 			},
 			shouldErr: true,
 			errField:   "FETCH_HOUR",
@@ -222,11 +228,13 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "missing cache file",
 			config: &Config{
-				GeminiAPIKey: "test-key",
-				FetchHour:    7,
-				SpecialsURL:  "http://example.com",
-				Port:         "8080",
-				Timezone:     "UTC",
+				RequestyAPIKey:  "test-key",
+				RequestyBaseURL: "https://router.requesty.ai/v1",
+				RequestyModel:   "gemini-1.5-flash",
+				FetchHour:       7,
+				SpecialsURL:     "http://example.com",
+				Port:            "8080",
+				Timezone:        "UTC",
 			},
 			shouldErr: true,
 			errField:   "CACHE_FILE",
@@ -234,11 +242,13 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "missing specials URL",
 			config: &Config{
-				GeminiAPIKey: "test-key",
-				FetchHour:    7,
-				CacheFile:    "test.json",
-				Port:         "8080",
-				Timezone:     "UTC",
+				RequestyAPIKey:  "test-key",
+				RequestyBaseURL: "https://router.requesty.ai/v1",
+				RequestyModel:   "gemini-1.5-flash",
+				FetchHour:       7,
+				CacheFile:       "test.json",
+				Port:            "8080",
+				Timezone:        "UTC",
 			},
 			shouldErr: true,
 			errField:   "SPECIALS_URL",
@@ -246,11 +256,13 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "missing port",
 			config: &Config{
-				GeminiAPIKey: "test-key",
-				FetchHour:    7,
-				CacheFile:    "test.json",
-				SpecialsURL:  "http://example.com",
-				Timezone:     "UTC",
+				RequestyAPIKey:  "test-key",
+				RequestyBaseURL: "https://router.requesty.ai/v1",
+				RequestyModel:   "gemini-1.5-flash",
+				FetchHour:       7,
+				CacheFile:       "test.json",
+				SpecialsURL:     "http://example.com",
+				Timezone:        "UTC",
 			},
 			shouldErr: true,
 			errField:   "PORT",
@@ -258,12 +270,14 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "invalid timezone",
 			config: &Config{
-				GeminiAPIKey: "test-key",
-				FetchHour:    7,
-				CacheFile:    "test.json",
-				SpecialsURL:  "http://example.com",
-				Port:         "8080",
-				Timezone:     "Invalid/Timezone",
+				RequestyAPIKey:  "test-key",
+				RequestyBaseURL: "https://router.requesty.ai/v1",
+				RequestyModel:   "gemini-1.5-flash",
+				FetchHour:       7,
+				CacheFile:       "test.json",
+				SpecialsURL:     "http://example.com",
+				Port:            "8080",
+				Timezone:        "Invalid/Timezone",
 			},
 			shouldErr: true,
 			errField:   "TIMEZONE",

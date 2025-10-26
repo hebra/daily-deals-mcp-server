@@ -1,21 +1,15 @@
 package internal
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"github.com/google/generative-ai-go/genai"
-	"google.golang.org/api/iterator"
-	"google.golang.org/api/option"
 	"io"
 	"log/slog"
 	"math"
 	"net/http"
 	"os"
 	"regexp"
-	"strings"
 	"sync"
 	"time"
 	_ "time/tzdata"
@@ -117,30 +111,28 @@ func fetchBigWatermelonDailyDealsWithLogger(config *Config, logger *slog.Logger)
 		}
 	}
 
-	logger.Info("Initializing Gemini client")
-	client := getClientWithLogger(ctx, logger)
-	if client == nil {
-		logger.Error("Failed to initialize Gemini client")
-		return ResponseData{}
-	}
-	defer func(client *genai.Client) {
-		err := client.Close()
-		if err != nil {
-			logger.Error("Error closing Gemini client", "error", err)
-		}
-	}(client)
-
-	logger.Info("Cleaning up old GCP files")
-	cleanUpGcpFilesWithLogger(ctx, client, config, logger)
-
 	logger.Info("Downloading images from Big Watermelon")
 	images := downloadImagesFromBigWatermelonWithLogger(config, logger)
 
-	logger.Info("Uploading images to Google Cloud", "image_count", len(images))
-	gcpFiles := uploadImagesToGoogleCloudWithLogger(ctx, client, images, config, logger)
+	if len(images) == 0 {
+		logger.Warn("No images downloaded, returning empty response")
+		return ResponseData{
+			LastUpdated: currentDate,
+			Business:    config.BusinessName,
+			Location:    config.Location,
+		}
+	}
 
-	logger.Info("Processing images with Gemini AI", "file_count", len(gcpFiles))
-	offers := makeRequestToGeminiWithLogger(ctx, client, gcpFiles, config, logger)
+	logger.Info("Processing images with Requesty AI", "image_count", len(images))
+	offers, err := makeRequestyAPICall(ctx, config, images, logger)
+	if err != nil {
+		logger.Error("Failed to process images with Requesty AI", "error", err)
+		return ResponseData{
+			LastUpdated: currentDate,
+			Business:    config.BusinessName,
+			Location:    config.Location,
+		}
+	}
 
 	resp := ResponseData{
 		LastUpdated: currentDate,
@@ -153,8 +145,7 @@ func fetchBigWatermelonDailyDealsWithLogger(config *Config, logger *slog.Logger)
 	writeOffersToFileWithLogger(resp, config, logger)
 
 	logger.Info("Deals fetch operation completed successfully",
-		"total_offers", len(offers),
-		"processing_time", time.Since(time.Now()))
+		"total_offers", len(offers))
 
 	return resp
 }
@@ -189,57 +180,6 @@ func checkLocalFileWithLogger(config *Config, logger *slog.Logger) ResponseData 
 		"offers_count", len(resp.Offers))
 
 	return resp
-}
-
-func getClient(ctx context.Context) *genai.Client {
-	logger := log.With("operation", "init_gemini_client")
-	return getClientWithLogger(ctx, logger)
-}
-
-func getClientWithLogger(ctx context.Context, logger *slog.Logger) *genai.Client {
-	logger.Debug("Initializing Gemini client")
-	client, err := genai.NewClient(ctx,
-		option.WithAPIKey(os.Getenv("GEMINI_API_KEY")))
-	if err != nil {
-		logger.Error("Failed to create Gemini client", "error", err)
-		return nil
-	}
-	logger.Debug("Gemini client initialized successfully")
-	return client
-}
-
-func cleanUpGcpFiles(ctx context.Context, client *genai.Client, config *Config) {
-	logger := log.With("operation", "cleanup_gcp", "prefix", config.GCPFilePrefix)
-	cleanUpGcpFilesWithLogger(ctx, client, config, logger)
-}
-
-func cleanUpGcpFilesWithLogger(ctx context.Context, client *genai.Client, config *Config, logger *slog.Logger) {
-	logger.Debug("Starting GCP file cleanup")
-	files := client.ListFiles(ctx)
-	deletedCount := 0
-
-	for {
-		file, err := files.Next()
-		if err != nil {
-			if errors.Is(err, iterator.Done) {
-				break
-			}
-			logger.Error("Error listing GCP files", "error", err)
-			return
-		}
-
-		if strings.Contains(file.Name, config.GCPFilePrefix) {
-			logger.Debug("Deleting old GCP file", "file_name", file.Name)
-			err = client.DeleteFile(ctx, file.Name)
-			if err != nil {
-				logger.Warn("Failed to delete GCP file", "file_name", file.Name, "error", err)
-			} else {
-				deletedCount++
-			}
-		}
-	}
-
-	logger.Info("GCP cleanup completed", "files_deleted", deletedCount)
 }
 
 func downloadImagesFromBigWatermelon(config *Config) [][]byte {
@@ -370,245 +310,6 @@ func downloadImagesFromBigWatermelonWithLogger(config *Config, logger *slog.Logg
 		"failed_downloads", errorCount)
 
 	return imageList
-}
-
-func uploadImagesToGoogleCloud(ctx context.Context, client *genai.Client, images [][]byte, config *Config) []*genai.File {
-	logger := log.With("operation", "upload_images", "image_count", len(images))
-	return uploadImagesToGoogleCloudWithLogger(ctx, client, images, config, logger)
-}
-
-func uploadImagesToGoogleCloudWithLogger(ctx context.Context, client *genai.Client, images [][]byte, config *Config, logger *slog.Logger) []*genai.File {
-	var files []*genai.File
-	var mu sync.Mutex
-
-	if len(images) == 0 {
-		logger.Warn("No images to upload")
-		return files
-	}
-
-	logger.Info("Starting image uploads to Google Cloud")
-
-	var wg sync.WaitGroup
-	wg.Add(len(images))
-	successCount := 0
-	errorCount := 0
-
-	for imageIndex, image := range images {
-		go func(index int, imageData []byte) {
-			defer wg.Done()
-
-			if len(imageData) == 0 {
-				logger.Error("Empty image data", "index", index)
-				mu.Lock()
-				errorCount++
-				mu.Unlock()
-				return
-			}
-
-			imageName := config.GCPFilePrefix + fmt.Sprintf("%d-jpg", index)
-			logger.Debug("Uploading image to GCP",
-				"index", index,
-				"name", imageName,
-				"size_bytes", len(imageData))
-
-			reader := bytes.NewReader(imageData)
-			options := genai.UploadFileOptions{
-				DisplayName: imageName,
-				MIMEType:    "image/jpeg",
-			}
-
-			file, err := client.UploadFile(ctx, imageName, reader, &options)
-			if err != nil {
-				logger.Error("Failed to upload image to Gemini",
-					"index", index,
-					"name", imageName,
-					"error", err)
-				mu.Lock()
-				errorCount++
-				mu.Unlock()
-				return
-			}
-
-			logger.Debug("Image uploaded successfully",
-				"index", index,
-				"file_uri", file.URI)
-
-			mu.Lock()
-			files = append(files, file)
-			successCount++
-			mu.Unlock()
-		}(imageIndex, image)
-	}
-
-	wg.Wait()
-
-	logger.Info("Image upload completed",
-		"total_images", len(images),
-		"successful_uploads", successCount,
-		"failed_uploads", errorCount)
-
-	return files
-}
-
-func makeRequestToGemini(ctx context.Context, client *genai.Client, files []*genai.File, config *Config) []Offer {
-	logger := log.With("operation", "gemini_processing", "file_count", len(files))
-	return makeRequestToGeminiWithLogger(ctx, client, files, config, logger)
-}
-
-func makeRequestToGeminiWithLogger(ctx context.Context, client *genai.Client, files []*genai.File, config *Config, logger *slog.Logger) []Offer {
-	var offers []Offer
-	var mu sync.Mutex
-
-	if len(files) == 0 {
-		logger.Warn("No files to process with Gemini")
-		return offers
-	}
-
-	logger.Info("Starting Gemini AI processing for image analysis")
-
-	// Create a timeout context for Gemini operations
-	geminiCtx, geminiCancel := context.WithTimeout(ctx, config.GeminiTimeout)
-	defer geminiCancel()
-
-	var wg sync.WaitGroup
-	wg.Add(len(files))
-	successCount := 0
-	errorCount := 0
-
-	for _, file := range files {
-		go func(gcpFile *genai.File) {
-			defer wg.Done()
-
-			fileLogger := logger.With("file_name", gcpFile.Name, "file_uri", gcpFile.URI)
-			fileLogger.Debug("Processing image with Gemini AI")
-
-			// Ensure file cleanup happens
-			defer func(client *genai.Client, ctx context.Context, name string) {
-				err := client.DeleteFile(ctx, name)
-				if err != nil {
-					fileLogger.Error("Failed to delete GCP file after processing", "error", err)
-				} else {
-					fileLogger.Debug("GCP file deleted successfully")
-				}
-			}(client, geminiCtx, gcpFile.Name)
-
-			genModel := client.GenerativeModel(config.GeminiModel)
-			genModel.ResponseMIMEType = "application/json"
-
-			prompt := `The image is an advertisement for fruits and vegetables that are on sale.
-Offers are separated by thing vertical and horizontal black lines.
-There are one, two or three offer columns per row.
-The name and price of the fruits are in the right lower corner of each row.
-Please extract the name and price of each offer from the image.
-Split each item into product name, price, currency and optionally the packaging type (e.g. ea, pk, kg etc.).
-Normalize the product names to start with upper case letters and the rest lower case letters.
-For the result use this JSON schema:
-Offer = {'productName': string, 'price': number, 'currency': string, 'size': string}
-Return: Array<Offer>`
-
-			resp, err := genModel.GenerateContent(geminiCtx,
-				genai.FileData{URI: gcpFile.URI},
-				genai.Text(prompt))
-
-			if err != nil {
-				fileLogger.Error("Gemini API call failed", "error", err)
-				mu.Lock()
-				errorCount++
-				mu.Unlock()
-				return
-			}
-
-			fileLogger.Debug("Gemini API call successful, parsing response")
-			parsedOffers := parseResponseJsonWithLogger(resp, fileLogger)
-
-			if len(parsedOffers) > 0 {
-				fileLogger.Info("Successfully extracted offers from image",
-					"offers_count", len(parsedOffers))
-			} else {
-				fileLogger.Warn("No offers extracted from image")
-			}
-
-			mu.Lock()
-			offers = append(offers, parsedOffers...)
-			successCount++
-			mu.Unlock()
-		}(file)
-	}
-
-	wg.Wait()
-
-	logger.Info("Gemini processing completed",
-		"total_files", len(files),
-		"successful_processing", successCount,
-		"failed_processing", errorCount,
-		"total_offers_extracted", len(offers))
-
-	return offers
-}
-
-func parseResponseJson(resp *genai.GenerateContentResponse) []Offer {
-	logger := log.With("operation", "parse_gemini_response")
-	return parseResponseJsonWithLogger(resp, logger)
-}
-
-func parseResponseJsonWithLogger(resp *genai.GenerateContentResponse, logger *slog.Logger) []Offer {
-	if resp == nil {
-		logger.Error("Received nil response from Gemini")
-		return []Offer{}
-	}
-
-	logger.Debug("Parsing Gemini response", "candidates_count", len(resp.Candidates))
-
-	for candidateIndex, candidate := range resp.Candidates {
-		logger.Debug("Processing candidate", "index", candidateIndex, "parts_count", len(candidate.Content.Parts))
-
-		for partIndex, part := range candidate.Content.Parts {
-			var offers []Offer
-
-			rawJson, ok := part.(genai.Text)
-			if !ok {
-				logger.Warn("Unexpected part type in Gemini response",
-					"candidate_index", candidateIndex,
-					"part_index", partIndex,
-					"part_type", fmt.Sprintf("%T", part))
-				continue
-			}
-
-			logger.Debug("Attempting to parse JSON response",
-				"candidate_index", candidateIndex,
-				"part_index", partIndex,
-				"json_length", len(rawJson))
-
-			if err := json.Unmarshal([]byte(rawJson), &offers); err != nil {
-				logger.Error("Failed to unmarshal Gemini JSON response",
-					"candidate_index", candidateIndex,
-					"part_index", partIndex,
-					"error", err,
-					"raw_json", string(rawJson))
-				continue
-			}
-
-			if len(offers) > 0 {
-				logger.Info("Successfully parsed offers from Gemini response",
-					"offers_count", len(offers))
-				for i, offer := range offers {
-					logger.Debug("Parsed offer",
-						"index", i,
-						"product", offer.ProductName,
-						"price", offer.Price,
-						"currency", offer.Currency,
-						"size", offer.Size)
-				}
-			} else {
-				logger.Warn("Gemini response contained no offers")
-			}
-
-			return offers
-		}
-	}
-
-	logger.Warn("No valid offers found in Gemini response")
-	return []Offer{}
 }
 
 func writeOffersToFile(resp ResponseData, config *Config) {
