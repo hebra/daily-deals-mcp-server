@@ -1,15 +1,15 @@
 # Big Watermelon Daily Deals MCP Server
 
-An MCP (Model Context Protocol) server that automatically fetches and analyzes daily produce deals from [Big Watermelon](https://www.bigwatermelon.com.au/), a fruit and vegetable wholesale store in Melbourne, Australia. The server uses Google Gemini AI to extract deal information from images and makes it available to AI agents via the MCP protocol.
+An MCP (Model Context Protocol) server that automatically fetches and analyzes daily produce deals from [Big Watermelon](https://www.bigwatermelon.com.au/), a fruit and vegetable wholesale store in Melbourne, Australia. The server uses Requesty.ai (with Gemini AI) to extract deal information from images and makes it available to AI agents via the MCP protocol.
 
 ## Features
 
 - **Automated Daily Fetching**: Retrieves deals once per day after 7 AM Australia/Melbourne time
-- **AI-Powered Extraction**: Uses Google Gemini to analyze deal images and extract structured data
+- **AI-Powered Extraction**: Uses Requesty.ai with Gemini to analyze deal images and extract structured data
 - **Intelligent Caching**: 24-hour cache to minimize API calls and improve performance
 - **Production-Ready**: Includes rate limiting, graceful shutdown, comprehensive logging, and error handling
 - **Highly Configurable**: All settings configurable via environment variables
-- **Performance Optimized**: Worker pool pattern, streaming uploads, and concurrent processing
+- **Performance Optimized**: Concurrent processing with exponential backoff retry logic
 - **SSE Transport**: Server-Sent Events for real-time MCP communication
 
 ## Architecture
@@ -36,8 +36,7 @@ graph TB
     
     subgraph "External Services"
         J[Big Watermelon Website]
-        K[Google Gemini API]
-        L[Google Cloud Storage]
+        K[Requesty.ai API]
     end
     
     A --> D
@@ -50,7 +49,6 @@ graph TB
     H --> I
     I --> J
     I --> K
-    I --> L
     
     style D fill:#e1f5ff
     style G fill:#fff4e1
@@ -60,7 +58,7 @@ graph TB
 ## Requirements
 
 - **Go**: 1.24.3 or later
-- **Google Gemini API Key**: Required for image analysis
+- **Requesty.ai API Key**: Required for image analysis (supports both `REQUESTY_API_KEY` and legacy `GEMINI_API_KEY`)
 - **Optional**: Docker for containerized deployment
 
 ## Installation
@@ -75,7 +73,9 @@ graph TB
 
 2. **Set up environment variables**:
    ```bash
-   export GEMINI_API_KEY=your-gemini-api-key-here
+   export REQUESTY_API_KEY=your-requesty-api-key-here
+   # OR use legacy variable name
+   export GEMINI_API_KEY=your-api-key-here
    ```
 
 3. **Install dependencies**:
@@ -113,7 +113,17 @@ All configuration is done via environment variables with sensible defaults:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `GEMINI_API_KEY` | Google Gemini API key for image analysis | **(Required)** |
+| `REQUESTY_API_KEY` | Requesty.ai API key for image analysis | **(Required)** |
+| `GEMINI_API_KEY` | Legacy API key variable (fallback) | **(Required if REQUESTY_API_KEY not set)** |
+
+### Requesty.ai Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `REQUESTY_BASE_URL` | Requesty.ai API base URL | `https://router.requesty.ai/v1` |
+| `REQUESTY_MODEL` | AI model to use | `gemini-1.5-flash` |
+| `REQUESTY_MAX_TOKENS` | Maximum tokens in response | `4096` |
+| `REQUESTY_TEMPERATURE` | Model temperature (0.0-1.0) | `0.0` |
 
 ### Server Configuration
 
@@ -150,18 +160,10 @@ All configuration is done via environment variables with sensible defaults:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `HTTP_TIMEOUT` | HTTP client timeout | `30s` |
-| `GEMINI_TIMEOUT` | Gemini API timeout | `60s` |
+| `GEMINI_TIMEOUT` | API timeout (legacy name) | `60s` |
 | `OVERALL_TIMEOUT` | Overall operation timeout | `300s` |
-| `MAX_CONCURRENT_GOROUTINES` | Worker pool size | `5` |
 | `MAX_RETRIES` | Maximum retry attempts | `3` |
 | `RETRY_BASE_DELAY` | Base delay between retries | `1s` |
-
-### Google Cloud Configuration
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `GCP_FILE_PREFIX` | Prefix for uploaded files | `au-bigwatermelon-image-` |
-| `GEMINI_MODEL` | Gemini model to use | `gemini-1.5-flash` |
 
 ## Development
 
@@ -339,9 +341,13 @@ Retrieves today's fruit and vegetable deals from Big Watermelon.
 │   ├── config.go                    # Configuration management
 │   ├── config_test.go               # Configuration tests
 │   ├── models.go                    # Data models
+│   ├── requesty-client.go           # Requesty.ai API client
 │   ├── big-watermelon-deals-fetcher.go    # Core fetching logic
 │   └── big-watermelon-deals-fetcher_test.go  # Fetcher tests
 ├── .roo/                            # Roo Code AI assistant rules
+│   └── rules-code/
+│       └── AGENTS.md                # Code mode specific rules
+├── AGENTS.md                        # General project guidance
 ├── Makefile                         # Build and development commands
 ├── go.mod                           # Go module definition
 ├── go.sum                           # Go module checksums
@@ -355,36 +361,38 @@ Retrieves today's fruit and vegetable deals from Big Watermelon.
 2. **Cache Check**: Checks if deals for today are already cached
 3. **Web Scraping**: If not cached, scrapes the Big Watermelon specials page for image URLs
 4. **Image Processing**: 
-   - Downloads images matching the pattern `SPECIALS*.jpg`
-   - Uploads to Google Cloud Storage (temporary)
-   - Sends to Gemini AI for analysis
-5. **Data Extraction**: Gemini extracts product names, prices, and sizes from images
-6. **Cleanup**: Automatically deletes uploaded images from Google Cloud
-7. **Caching**: Stores results in local cache file for 24 hours
-8. **Response**: Returns structured JSON data to MCP clients
+   - Downloads images matching the pattern `SPECIALS*.jpg` (case-insensitive)
+   - Encodes images as base64 data URLs with proper MIME type detection
+   - Sends to Requesty.ai API for analysis
+5. **Data Extraction**: AI extracts product names, prices, and sizes from images
+6. **Caching**: Stores results in local cache file for 24 hours
+7. **Response**: Returns structured JSON data to MCP clients
 
 ## Performance & Reliability Features
 
-- **Concurrent Processing**: Worker pool pattern limits concurrent operations (default: 5)
-- **Streaming Uploads**: Reduces memory footprint by streaming image data
-- **Timeout Management**: Configurable timeouts prevent indefinite hangs
+- **Concurrent Processing**: Concurrent image downloads with mutex-protected operations
+- **Exponential Backoff**: Retry logic with exponential backoff for failed operations
+- **Timeout Management**: Configurable timeouts with context cancellation support
 - **Rate Limiting**: Protects server from abuse (default: 100 requests/minute)
 - **Graceful Shutdown**: Properly closes connections on termination
 - **Structured Logging**: Comprehensive logging with request IDs for tracing
-- **Error Handling**: Robust error handling with retries and exponential backoff
+- **Error Handling**: Robust error handling with structured error parsing
 - **Race Condition Protection**: Mutex-protected concurrent operations
+- **Prompt Caching**: Ephemeral cache control for efficient API usage
 
 ## Troubleshooting
 
 ### Server won't start
 
-**Problem**: `GEMINI_API_KEY` not set
+**Problem**: API key not set
 ```
-Configuration validation failed: validation error for GEMINI_API_KEY: API key is required
+Configuration validation failed: validation error for REQUESTY_API_KEY or GEMINI_API_KEY: API key is required
 ```
 
 **Solution**: Set the environment variable:
 ```bash
+export REQUESTY_API_KEY=your-api-key-here
+# OR
 export GEMINI_API_KEY=your-api-key-here
 ```
 
@@ -394,7 +402,7 @@ export GEMINI_API_KEY=your-api-key-here
 
 **Solution**: The server only fetches deals after 7 AM Australia/Melbourne time. Check logs for:
 ```
-Current time is before fetch hour, skipping fetch
+Too early to fetch deals, waiting for configured hour
 ```
 
 You can override this by setting `FETCH_HOUR=0` to fetch immediately.
@@ -423,13 +431,13 @@ export GEMINI_TIMEOUT=120s
 export OVERALL_TIMEOUT=600s
 ```
 
-### Memory issues
+### API errors
 
-**Problem**: High memory usage
+**Problem**: Requesty.ai API errors
 
-**Solution**: Reduce concurrent operations:
-```bash
-export MAX_CONCURRENT_GOROUTINES=3
+**Solution**: Check your API key and ensure you have sufficient credits. The server logs structured error messages from the API:
+```
+requesty API error [error_type]: error message
 ```
 
 ## License
@@ -443,5 +451,6 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## Acknowledgments
 
 - [Big Watermelon](https://www.bigwatermelon.com.au/) for providing daily deals
-- [Google Gemini](https://ai.google.dev/) for AI-powered image analysis
+- [Requesty.ai](https://requesty.ai/) for AI-powered image analysis infrastructure
+- [Google Gemini](https://ai.google.dev/) for the underlying AI model
 - [MCP Protocol](https://github.com/ThinkInAIXYZ/go-mcp) for the Model Context Protocol implementation
