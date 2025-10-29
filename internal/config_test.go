@@ -8,13 +8,12 @@ import (
 
 func TestLoadConfig_Defaults(t *testing.T) {
 	// Clear environment variables to test defaults
-	envVars := []string{
-		"GEMINI_API_KEY", "FETCH_HOUR", "CACHE_FILE", "SPECIALS_URL",
-		"BUSINESS_NAME", "PORT", "GCP_FILE_PREFIX", "GEMINI_MODEL",
-		"TIMEZONE", "HTTP_TIMEOUT", "GEMINI_TIMEOUT", "OVERALL_TIMEOUT",
-		"LOCATION_LATITUDE", "LOCATION_LONGITUDE", "LOCATION_ADDRESS",
-		"LOCATION_CITY", "LOCATION_STATE", "LOCATION_ZIP", "LOCATION_COUNTRY",
-	}
+		envVars := []string{
+			"REQUESTY_API_KEY", "FETCH_HOUR", "CACHE_FILE", "SPECIALS_URL",
+			"BUSINESS_NAME", "PORT", "TIMEZONE", "HTTP_TIMEOUT", "REQUESTY_TIMEOUT", "OVERALL_TIMEOUT",
+			"LOCATION_LATITUDE", "LOCATION_LONGITUDE", "LOCATION_ADDRESS",
+			"LOCATION_CITY", "LOCATION_STATE", "LOCATION_ZIP", "LOCATION_COUNTRY",
+		}
 
 	// Save original values
 	originalValues := make(map[string]string)
@@ -33,17 +32,17 @@ func TestLoadConfig_Defaults(t *testing.T) {
 		}
 	}()
 
-	// This should fail because GEMINI_API_KEY is required
+	// This should fail because REQUESTY_API_KEY is required
 	// We can't test this directly because LoadConfig calls os.Exit(1)
 	// Instead, we'll test the validation separately
 	config := &Config{}
 	err := config.Validate()
 	if err == nil {
-		t.Error("Expected validation to fail with missing GEMINI_API_KEY")
+		t.Error("Expected validation to fail with missing REQUESTY_API_KEY")
 	}
 	if validationErr, ok := err.(*ValidationError); ok {
-		if validationErr.Field != "REQUESTY_API_KEY or GEMINI_API_KEY" {
-			t.Errorf("Expected error field to be 'REQUESTY_API_KEY or GEMINI_API_KEY', got %s", validationErr.Field)
+		if validationErr.Field != "REQUESTY_API_KEY" {
+			t.Errorf("Expected error field to be 'REQUESTY_API_KEY', got %s", validationErr.Field)
 		}
 	} else {
 		t.Errorf("Expected ValidationError, got %T", err)
@@ -52,13 +51,12 @@ func TestLoadConfig_Defaults(t *testing.T) {
 
 func TestLoadConfig_WithAPIKey(t *testing.T) {
 	// Clear environment variables
-	envVars := []string{
-		"GEMINI_API_KEY", "FETCH_HOUR", "CACHE_FILE", "SPECIALS_URL",
-		"BUSINESS_NAME", "PORT", "GCP_FILE_PREFIX", "GEMINI_MODEL",
-		"TIMEZONE", "HTTP_TIMEOUT", "GEMINI_TIMEOUT", "OVERALL_TIMEOUT",
-		"LOCATION_LATITUDE", "LOCATION_LONGITUDE", "LOCATION_ADDRESS",
-		"LOCATION_CITY", "LOCATION_STATE", "LOCATION_ZIP", "LOCATION_COUNTRY",
-	}
+		envVars := []string{
+			"REQUESTY_API_KEY", "FETCH_HOUR", "CACHE_FILE", "SPECIALS_URL",
+			"BUSINESS_NAME", "PORT", "TIMEZONE", "HTTP_TIMEOUT", "REQUESTY_TIMEOUT", "OVERALL_TIMEOUT",
+			"LOCATION_LATITUDE", "LOCATION_LONGITUDE", "LOCATION_ADDRESS",
+			"LOCATION_CITY", "LOCATION_STATE", "LOCATION_ZIP", "LOCATION_COUNTRY",
+		}
 
 	// Save original values
 	originalValues := make(map[string]string)
@@ -78,7 +76,7 @@ func TestLoadConfig_WithAPIKey(t *testing.T) {
 	}()
 
 	// Set required API key
-	os.Setenv("GEMINI_API_KEY", "test-api-key")
+	os.Setenv("REQUESTY_API_KEY", "test-api-key")
 
 	config := LoadConfig()
 
@@ -92,8 +90,8 @@ func TestLoadConfig_WithAPIKey(t *testing.T) {
 	if config.Port != "8080" {
 		t.Errorf("Expected Port to be '8080', got %s", config.Port)
 	}
-	if config.GeminiModel != "gemini-1.5-flash" {
-		t.Errorf("Expected GeminiModel to be 'gemini-1.5-flash', got %s", config.GeminiModel)
+	if config.RequestyModel != "google/gemini-2.5-flash" {
+		t.Errorf("Expected RequestyModel to be 'google/gemini-2.5-flash', got %s", config.RequestyModel)
 	}
 	if config.HTTPTimeout != 30*time.Second {
 		t.Errorf("Expected HTTPTimeout to be 30s, got %v", config.HTTPTimeout)
@@ -102,13 +100,12 @@ func TestLoadConfig_WithAPIKey(t *testing.T) {
 
 func TestLoadConfig_CustomValues(t *testing.T) {
 	// Clear environment variables
-	envVars := []string{
-		"GEMINI_API_KEY", "FETCH_HOUR", "CACHE_FILE", "SPECIALS_URL",
-		"BUSINESS_NAME", "PORT", "GCP_FILE_PREFIX", "GEMINI_MODEL",
-		"TIMEZONE", "HTTP_TIMEOUT", "GEMINI_TIMEOUT", "OVERALL_TIMEOUT",
-		"LOCATION_LATITUDE", "LOCATION_LONGITUDE", "LOCATION_ADDRESS",
-		"LOCATION_CITY", "LOCATION_STATE", "LOCATION_ZIP", "LOCATION_COUNTRY",
-	}
+		envVars := []string{
+			"REQUESTY_API_KEY", "FETCH_HOUR", "CACHE_FILE", "SPECIALS_URL",
+			"BUSINESS_NAME", "PORT", "TIMEZONE", "HTTP_TIMEOUT", "REQUESTY_TIMEOUT", "OVERALL_TIMEOUT",
+			"LOCATION_LATITUDE", "LOCATION_LONGITUDE", "LOCATION_ADDRESS",
+			"LOCATION_CITY", "LOCATION_STATE", "LOCATION_ZIP", "LOCATION_COUNTRY",
+		}
 
 	// Save original values
 	originalValues := make(map[string]string)
@@ -128,7 +125,7 @@ func TestLoadConfig_CustomValues(t *testing.T) {
 	}()
 
 	// Set custom values
-	os.Setenv("GEMINI_API_KEY", "custom-api-key")
+	os.Setenv("REQUESTY_API_KEY", "custom-api-key")
 	os.Setenv("FETCH_HOUR", "9")
 	os.Setenv("CACHE_FILE", "custom-cache.json")
 	os.Setenv("PORT", "3000")
@@ -137,8 +134,8 @@ func TestLoadConfig_CustomValues(t *testing.T) {
 
 	config := LoadConfig()
 
-	if config.GeminiAPIKey != "custom-api-key" {
-		t.Errorf("Expected GeminiAPIKey to be 'custom-api-key', got %s", config.GeminiAPIKey)
+	if config.RequestyAPIKey != "custom-api-key" {
+		t.Errorf("Expected RequestyAPIKey to be 'custom-api-key', got %s", config.RequestyAPIKey)
 	}
 	if config.FetchHour != 9 {
 		t.Errorf("Expected FetchHour to be 9, got %d", config.FetchHour)
@@ -169,7 +166,7 @@ func TestConfig_Validate(t *testing.T) {
 			config: &Config{
 				RequestyAPIKey:          "test-key",
 				RequestyBaseURL:         "https://router.requesty.ai/v1",
-				RequestyModel:           "gemini-1.5-flash",
+				RequestyModel:           "google/gemini-2.5-flash",
 				FetchHour:               7,
 				CacheFile:               "test.json",
 				SpecialsURL:             "http://example.com",
@@ -193,14 +190,14 @@ func TestConfig_Validate(t *testing.T) {
 				Timezone:    "UTC",
 			},
 			shouldErr: true,
-			errField:   "REQUESTY_API_KEY or GEMINI_API_KEY",
+			errField:   "REQUESTY_API_KEY",
 		},
 		{
 			name: "invalid fetch hour - negative",
 			config: &Config{
 				RequestyAPIKey:  "test-key",
 				RequestyBaseURL: "https://router.requesty.ai/v1",
-				RequestyModel:   "gemini-1.5-flash",
+				RequestyModel:   "google/gemini-2.5-flash",
 				FetchHour:       -1,
 				CacheFile:       "test.json",
 				SpecialsURL:     "http://example.com",
@@ -215,7 +212,7 @@ func TestConfig_Validate(t *testing.T) {
 			config: &Config{
 				RequestyAPIKey:  "test-key",
 				RequestyBaseURL: "https://router.requesty.ai/v1",
-				RequestyModel:   "gemini-1.5-flash",
+				RequestyModel:   "google/gemini-2.5-flash",
 				FetchHour:       25,
 				CacheFile:       "test.json",
 				SpecialsURL:     "http://example.com",
@@ -230,7 +227,7 @@ func TestConfig_Validate(t *testing.T) {
 			config: &Config{
 				RequestyAPIKey:  "test-key",
 				RequestyBaseURL: "https://router.requesty.ai/v1",
-				RequestyModel:   "gemini-1.5-flash",
+				RequestyModel:   "google/gemini-2.5-flash",
 				FetchHour:       7,
 				SpecialsURL:     "http://example.com",
 				Port:            "8080",
@@ -244,7 +241,7 @@ func TestConfig_Validate(t *testing.T) {
 			config: &Config{
 				RequestyAPIKey:  "test-key",
 				RequestyBaseURL: "https://router.requesty.ai/v1",
-				RequestyModel:   "gemini-1.5-flash",
+				RequestyModel:   "google/gemini-2.5-flash",
 				FetchHour:       7,
 				CacheFile:       "test.json",
 				Port:            "8080",
@@ -258,7 +255,7 @@ func TestConfig_Validate(t *testing.T) {
 			config: &Config{
 				RequestyAPIKey:  "test-key",
 				RequestyBaseURL: "https://router.requesty.ai/v1",
-				RequestyModel:   "gemini-1.5-flash",
+				RequestyModel:   "google/gemini-2.5-flash",
 				FetchHour:       7,
 				CacheFile:       "test.json",
 				SpecialsURL:     "http://example.com",
@@ -272,7 +269,7 @@ func TestConfig_Validate(t *testing.T) {
 			config: &Config{
 				RequestyAPIKey:  "test-key",
 				RequestyBaseURL: "https://router.requesty.ai/v1",
-				RequestyModel:   "gemini-1.5-flash",
+				RequestyModel:   "google/gemini-2.5-flash",
 				FetchHour:       7,
 				CacheFile:       "test.json",
 				SpecialsURL:     "http://example.com",

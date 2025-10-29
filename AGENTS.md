@@ -20,7 +20,7 @@ This file provides guidance to agents when working with code in this repository.
 - Prompt explicitly mentions "one, two or three offer columns per row" - critical for correct parsing
 
 ### API Configuration
-- Supports both `REQUESTY_API_KEY` and legacy `GEMINI_API_KEY` environment variables
+- Requires `REQUESTY_API_KEY` environment variable
 - Config validation happens at startup - exits with error if required fields missing
 - HTTP client configured with connection pooling (100 max idle, 10 per host)
 

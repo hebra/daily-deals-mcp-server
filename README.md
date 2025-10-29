@@ -1,11 +1,11 @@
 # Big Watermelon Daily Deals MCP Server
 
-An MCP (Model Context Protocol) server that automatically fetches and analyzes daily produce deals from [Big Watermelon](https://www.bigwatermelon.com.au/), a fruit and vegetable wholesale store in Melbourne, Australia. The server uses Requesty.ai (with Gemini AI) to extract deal information from images and makes it available to AI agents via the MCP protocol.
+An MCP (Model Context Protocol) server that automatically fetches and analyzes daily produce deals from [Big Watermelon](https://www.bigwatermelon.com.au/), a fruit and vegetable wholesale store in Melbourne, Australia. The server uses Requesty.ai to extract deal information from images and makes it available to AI agents via the MCP protocol.
 
 ## Features
 
 - **Automated Daily Fetching**: Retrieves deals once per day after 7 AM Australia/Melbourne time
-- **AI-Powered Extraction**: Uses Requesty.ai with Gemini to analyze deal images and extract structured data
+- **AI-Powered Extraction**: Uses Requesty.ai to analyze deal images and extract structured data
 - **Intelligent Caching**: 24-hour cache to minimize API calls and improve performance
 - **Production-Ready**: Includes rate limiting, graceful shutdown, comprehensive logging, and error handling
 - **Highly Configurable**: All settings configurable via environment variables
@@ -58,7 +58,7 @@ graph TB
 ## Requirements
 
 - **Go**: 1.24.3 or later
-- **Requesty.ai API Key**: Required for image analysis (supports both `REQUESTY_API_KEY` and legacy `GEMINI_API_KEY`)
+- **Requesty.ai API Key**: Required for image analysis
 - **Optional**: Docker for containerized deployment
 
 ## Installation
@@ -72,11 +72,9 @@ graph TB
    ```
 
 2. **Set up environment variables**:
-   ```bash
-   export REQUESTY_API_KEY=your-requesty-api-key-here
-   # OR use legacy variable name
-   export GEMINI_API_KEY=your-api-key-here
-   ```
+    ```bash
+    export REQUESTY_API_KEY=your-requesty-api-key-here
+    ```
 
 3. **Install dependencies**:
    ```bash
@@ -114,14 +112,13 @@ All configuration is done via environment variables with sensible defaults:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `REQUESTY_API_KEY` | Requesty.ai API key for image analysis | **(Required)** |
-| `GEMINI_API_KEY` | Legacy API key variable (fallback) | **(Required if REQUESTY_API_KEY not set)** |
 
 ### Requesty.ai Configuration
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `REQUESTY_BASE_URL` | Requesty.ai API base URL | `https://router.requesty.ai/v1` |
-| `REQUESTY_MODEL` | AI model to use | `gemini-1.5-flash` |
+| `REQUESTY_MODEL` | AI model to use | `google/gemini-2.5-flash` |
 | `REQUESTY_MAX_TOKENS` | Maximum tokens in response | `4096` |
 | `REQUESTY_TEMPERATURE` | Model temperature (0.0-1.0) | `0.0` |
 
@@ -160,7 +157,7 @@ All configuration is done via environment variables with sensible defaults:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `HTTP_TIMEOUT` | HTTP client timeout | `30s` |
-| `GEMINI_TIMEOUT` | API timeout (legacy name) | `60s` |
+| `REQUESTY_TIMEOUT` | API timeout | `60s` |
 | `OVERALL_TIMEOUT` | Overall operation timeout | `300s` |
 | `MAX_RETRIES` | Maximum retry attempts | `3` |
 | `RETRY_BASE_DELAY` | Base delay between retries | `1s` |
@@ -386,14 +383,12 @@ Retrieves today's fruit and vegetable deals from Big Watermelon.
 
 **Problem**: API key not set
 ```
-Configuration validation failed: validation error for REQUESTY_API_KEY or GEMINI_API_KEY: API key is required
+Configuration validation failed: validation error for REQUESTY_API_KEY: API key is required
 ```
 
 **Solution**: Set the environment variable:
 ```bash
 export REQUESTY_API_KEY=your-api-key-here
-# OR
-export GEMINI_API_KEY=your-api-key-here
 ```
 
 ### No deals returned
@@ -427,7 +422,7 @@ export RATE_LIMIT_WINDOW=1m
 **Solution**: Increase timeout values:
 ```bash
 export HTTP_TIMEOUT=60s
-export GEMINI_TIMEOUT=120s
+export REQUESTY_TIMEOUT=120s
 export OVERALL_TIMEOUT=600s
 ```
 
@@ -452,5 +447,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 - [Big Watermelon](https://www.bigwatermelon.com.au/) for providing daily deals
 - [Requesty.ai](https://requesty.ai/) for AI-powered image analysis infrastructure
-- [Google Gemini](https://ai.google.dev/) for the underlying AI model
 - [MCP Protocol](https://github.com/ThinkInAIXYZ/go-mcp) for the Model Context Protocol implementation

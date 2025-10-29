@@ -10,7 +10,6 @@ import (
 
 // Config holds all configuration for the application
 type Config struct {
-	GeminiAPIKey            string // Deprecated: Use RequestyAPIKey instead
 	RequestyAPIKey          string
 	RequestyBaseURL         string
 	RequestyModel           string
@@ -21,12 +20,10 @@ type Config struct {
 	SpecialsURL             string
 	BusinessName            string
 	Port                    string
-	GCPFilePrefix           string // Deprecated: No longer used with requesty.ai
-	GeminiModel             string // Deprecated: Use RequestyModel instead
 	Timezone                string
 	Location                Location
 	HTTPTimeout             time.Duration
-	GeminiTimeout           time.Duration
+	RequestyTimeout         time.Duration
 	OverallTimeout          time.Duration
 	MaxRetries              int
 	RetryBaseDelay          time.Duration
@@ -40,17 +37,10 @@ type Config struct {
 func LoadConfig() *Config {
 	httpTimeout := getEnvAsDuration("HTTP_TIMEOUT", 30*time.Second)
 
-	// Support both old GEMINI_API_KEY and new REQUESTY_API_KEY
-	requestyAPIKey := os.Getenv("REQUESTY_API_KEY")
-	if requestyAPIKey == "" {
-		requestyAPIKey = os.Getenv("GEMINI_API_KEY")
-	}
-
 	config := &Config{
-		GeminiAPIKey:            os.Getenv("GEMINI_API_KEY"), // Deprecated but kept for backward compatibility
-		RequestyAPIKey:          requestyAPIKey,
+		RequestyAPIKey:          getEnvWithDefault("REQUESTY_API_KEY", ""),
 		RequestyBaseURL:         getEnvWithDefault("REQUESTY_BASE_URL", "https://router.requesty.ai/v1"),
-		RequestyModel:           getEnvWithDefault("REQUESTY_MODEL", "gemini-1.5-flash"),
+		RequestyModel:           getEnvWithDefault("REQUESTY_MODEL", "google/gemini-2.5-flash"),
 		RequestyMaxTokens:       getEnvAsInt("REQUESTY_MAX_TOKENS", 4096),
 		RequestyTemperature:     getEnvAsFloat("REQUESTY_TEMPERATURE", 0.0),
 		FetchHour:               getEnvAsInt("FETCH_HOUR", 7),
@@ -58,11 +48,9 @@ func LoadConfig() *Config {
 		SpecialsURL:             getEnvWithDefault("SPECIALS_URL", "https://www.bigwatermelon.com.au/category/specials/"),
 		BusinessName:            getEnvWithDefault("BUSINESS_NAME", "Big Watermelon Bushy Park"),
 		Port:                    getEnvWithDefault("PORT", "8080"),
-		GCPFilePrefix:           getEnvWithDefault("GCP_FILE_PREFIX", "au-bigwatermelon-image-"),
-		GeminiModel:             getEnvWithDefault("GEMINI_MODEL", "gemini-1.5-flash"),
 		Timezone:                getEnvWithDefault("TIMEZONE", "Australia/Melbourne"),
 		HTTPTimeout:             httpTimeout,
-		GeminiTimeout:           getEnvAsDuration("GEMINI_TIMEOUT", 60*time.Second),
+		RequestyTimeout:         getEnvAsDuration("REQUESTY_TIMEOUT", 60*time.Second),
 		OverallTimeout:          getEnvAsDuration("OVERALL_TIMEOUT", 300*time.Second),
 		MaxRetries:              getEnvAsInt("MAX_RETRIES", 3),
 		RetryBaseDelay:          getEnvAsDuration("RETRY_BASE_DELAY", 1*time.Second),
@@ -100,7 +88,7 @@ func LoadConfig() *Config {
 // Validate checks that required configuration values are present
 func (c *Config) Validate() error {
 	if c.RequestyAPIKey == "" {
-		return &ValidationError{Field: "REQUESTY_API_KEY or GEMINI_API_KEY", Message: "API key is required"}
+		return &ValidationError{Field: "REQUESTY_API_KEY", Message: "API key is required"}
 	}
 
 	if c.RequestyBaseURL == "" {

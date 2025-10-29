@@ -4,7 +4,7 @@
 - Requesty.ai uses OpenAI-compatible format - images MUST be base64-encoded data URLs
 - Response format MUST be `"type": "json_object"` (not `application/json` MIME type)
 - Cache control with `"type": "ephemeral"` required on text content for prompt caching
-- API supports both `REQUESTY_API_KEY` and legacy `GEMINI_API_KEY` env vars (fallback logic in config)
+- API requires `REQUESTY_API_KEY` environment variable
 
 ## Time Handling
 - Uses `time/tzdata` import for embedded timezone data (line 15) - required for environments without system timezone files

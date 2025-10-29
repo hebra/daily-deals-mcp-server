@@ -6,7 +6,7 @@
 
 ## Error Handling
 - HTTP response bodies must be closed with defer to prevent leaks (lines 156-161, 207-212)
-- Gemini client must be closed with defer (line 68-73)
+- Requesty.ai client must be closed with defer (line 68-73)
 - Silent failures possible in goroutines without proper error propagation
 
 ## Cache Debugging
